@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MindAR Target Compiler</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; max-width: 720px; margin: auto; }
+    h1 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+    p { opacity: 0.8; line-height: 1.5; margin-bottom: 1rem; }
+    button { background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; padding: 0.6rem 1.2rem; font-weight: 600; cursor: pointer; margin-right: 0.5rem; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #log { margin-top: 1.5rem; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; background: #1e293b; border-radius: 8px; padding: 1rem; min-height: 8rem; }
+    #decks { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; background: #1e293b; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    #decks label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+    #decks input { width: 1rem; height: 1rem; accent-color: #38bdf8; }
+    #decks .muted { opacity: 0.6; }
+    .bulk { background: none; border: 1px solid #475569; color: #e2e8f0; font-weight: 400; padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+    .warn { color: #fbbf24; }
+    .err { color: #f87171; }
+    .ok { color: #4ade80; }
+  </style>
+</head>
+<body>
+  <h1>MindAR Target Compiler</h1>
+  <p>
+    Compiles one <code>.mind</code> file per category from <code>assets/manifest.json</code>
+    (run <code>npm run validate</code> first). Card order follows the manifest — recompile
+    whenever cards change. Save/move the resulting files to <code>assets/targets/</code>.
+  </p>
+  <button id="pick">1. Choose assets/targets folder (direct save)</button>
+  <p style="margin:1rem 0 0.5rem">
+    2. Pick categories &mdash; compiling is memory-hungry, so one deck at a time is safest.
+    <button class="bulk" id="all">All</button>
+    <button class="bulk" id="none">None</button>
+  </p>
+  <div id="decks">Loading manifest…</div>
+  <button id="compile" disabled>3. Compile selected</button>
+  <div id="log">Idle.</div>
+
+  <script type="module">
+    import { Compiler } from 'mind-ar/dist/mindar-image.prod.js';
+    import { loadCardImage } from './load-card-image.js';
+
+    const logEl = document.getElementById('log');
+    const log = (msg, cls = '') => {
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = msg;
+      logEl.appendChild(line);
+      line.scrollIntoView();
+    };
+
+    let targetsDirHandle = null;
+
+    document.getElementById('pick').addEventListener('click', async () => {
+      if (!window.showDirectoryPicker) {
+        log('Directory picker unsupported in this browser — files will download instead.', 'warn');
+        return;
+      }
+      targetsDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      log(`Will save directly into "${targetsDirHandle.name}/".`, 'ok');
+    });
+
+    async function saveBuffer(name, buffer) {
+      if (targetsDirHandle) {
+        const fileHandle = await targetsDirHandle.getFileHandle(name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(buffer);
+        await writable.close();
+      } else {
+        const blob = new Blob([buffer]);
+        const a = document.createElement('a');
+        const href = URL.createObjectURL(blob);
+        a.href = href;
+        a.download = name;
+        a.click();
+        // A .mind file is several MB; revoking in the same tick can pull the
+        // blob before Chrome has committed the download, which fails silently.
+        setTimeout(() => URL.revokeObjectURL(href), 60_000);
+      }
+    }
+
+    const decksEl = document.getElementById('decks');
+    const compileBtn = document.getElementById('compile');
+    let manifest = null;
+
+    // Compiling every deck rebuilds .mind files that did not change, which for a
+    // 26-card deck is minutes of work and a large allocation. Checkboxes let you
+    // rebuild only the decks whose cards actually changed.
+    async function renderDecks() {
+      const res = await fetch('/assets/manifest.json');
+      if (!res.ok) { decksEl.textContent = 'assets/manifest.json not found — run npm run validate first.'; return; }
+      manifest = await res.json();
+
+      decksEl.replaceChildren();
+      for (const cat of manifest.categories) {
+        const label = document.createElement('label');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.value = cat.id;
+        const text = document.createElement('span');
+        text.textContent = `${cat.id} (${cat.cards.length})`;
+        label.append(box, text);
+        decksEl.appendChild(label);
+
+        // Existing target = this deck is already compiled; leave it unchecked so
+        // the default action never redoes finished work. The content-type guard
+        // matters: the dev server answers a missing file with its index.html
+        // fallback, which is a 200 and would read as "already compiled".
+        fetch(`/assets/targets/${cat.id}.mind`, { method: 'HEAD' }).then((r) => {
+          if (r.ok && !(r.headers.get('content-type') ?? '').includes('text/html')) {
+            const note = document.createElement('span');
+            note.className = 'muted';
+            note.textContent = '· has .mind';
+            label.appendChild(note);
+          } else {
+            box.checked = true;
+          }
+        }).catch(() => { box.checked = true; });
+      }
+      compileBtn.disabled = false;
+    }
+
+    const boxes = () => [...decksEl.querySelectorAll('input[type=checkbox]')];
+    document.getElementById('all').addEventListener('click', () => boxes().forEach((b) => { b.checked = true; }));
+    document.getElementById('none').addEventListener('click', () => boxes().forEach((b) => { b.checked = false; }));
+
+    renderDecks();
+
+    compileBtn.addEventListener('click', async () => {
+      logEl.textContent = '';
+      if (!manifest) { log('No manifest loaded.', 'err'); return; }
+
+      const selected = new Set(boxes().filter((b) => b.checked).map((b) => b.value));
+      if (!selected.size) { log('Nothing selected.', 'warn'); return; }
+
+      for (const cat of manifest.categories.filter((c) => selected.has(c.id))) {
+        log(`Compiling "${cat.id}" (${cat.cards.length} cards)…`);
+        try {
+          const images = await Promise.all(cat.cards.map((c) => loadCardImage(c.image)));
+          const compiler = new Compiler();
+          await compiler.compileImageTargets(images, (progress) => {
+            logEl.lastChild.textContent = `Compiling "${cat.id}" (${cat.cards.length} cards)… ${progress.toFixed(0)}%`;
+          });
+          const buffer = await compiler.exportData();
+          await saveBuffer(`${cat.id}.mind`, buffer);
+          log(`  saved ${cat.id}.mind`, 'ok');
+        } catch (err) {
+          log(`  FAILED ${cat.id}: ${err.message}`, 'err');
+        }
+      }
+      log('Done. Ensure all .mind files are in assets/targets/.', 'ok');
+    });
+  </script>
+</body>
+</html>

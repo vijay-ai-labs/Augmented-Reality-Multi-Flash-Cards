@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Model Placement Editor</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; height: 100vh; display: grid; grid-template-columns: 240px 1fr 280px; }
+    h1 { font-size: 1rem; margin: 0 0 0.75rem; }
+    aside { background: #111c34; padding: 1rem; overflow-y: auto; border-right: 1px solid #1e293b; }
+    aside.right { border-right: none; border-left: 1px solid #1e293b; }
+    main { position: relative; background: #0b1120; }
+    #stage { position: absolute; inset: 0; }
+    button { background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; padding: 0.5rem 0.9rem; font-weight: 600; cursor: pointer; font-size: 0.85rem; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button.ghost { background: none; border: 1px solid #475569; color: #e2e8f0; font-weight: 400; }
+    select { width: 100%; padding: 0.45rem; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; margin-bottom: 0.75rem; }
+    .cards { display: flex; flex-direction: column; gap: 2px; }
+    .cards button { background: none; color: #cbd5e1; text-align: left; font-weight: 400; padding: 0.35rem 0.5rem; border-radius: 6px; display: flex; justify-content: space-between; gap: 0.5rem; }
+    .cards button:hover { background: #1e293b; }
+    .cards button[aria-current="true"] { background: #38bdf8; color: #0f172a; font-weight: 600; }
+    .dot { opacity: 0.55; font-size: 0.75rem; }
+    label.field { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; margin: 0.75rem 0 0.2rem; }
+    .row { display: flex; align-items: center; gap: 0.5rem; }
+    input[type="range"] { flex: 1; accent-color: #38bdf8; min-width: 0; }
+    input[type="number"] { width: 5rem; padding: 0.3rem; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; font-size: 0.8rem; }
+    .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
+    #status { position: absolute; left: 1rem; bottom: 1rem; right: 1rem; font-family: monospace; font-size: 0.8rem; background: rgba(15, 23, 42, 0.85); border-radius: 8px; padding: 0.5rem 0.75rem; pointer-events: none; }
+    .hint { font-size: 0.75rem; opacity: 0.6; line-height: 1.5; margin-top: 1rem; }
+    .err { color: #f87171; }
+    .ok { color: #4ade80; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>Placement Editor</h1>
+    <select id="deck"></select>
+    <div class="cards" id="cards"></div>
+  </aside>
+
+  <main>
+    <div id="stage"></div>
+    <div id="status">Loading manifest…</div>
+  </main>
+
+  <aside class="right">
+    <div class="btn-row">
+      <button class="ghost" id="view-match">Match view</button>
+      <button class="ghost" id="view-3d">3D view</button>
+      <button class="ghost" id="view-top">Card view</button>
+    </div>
+    <p class="hint">Match view is exactly what the AR camera sees head-on — compare the model against the print behind it. Facing the card, drag inside the box to move it and drag the corner marker to resize.</p>
+
+    <label class="field" for="opacity">Model opacity <span id="opacity-val">100%</span></label>
+    <input type="range" id="opacity" min="10" max="100" step="5" value="100" />
+
+    <div class="btn-row">
+      <button id="auto-match">Auto-match card</button>
+      <button class="ghost" id="solve-deck">Solve deck</button>
+    </div>
+    <label class="field" for="mask-threshold">Print mask threshold <span id="mask-val">42</span></label>
+    <div class="row">
+      <input type="range" id="mask-threshold" min="8" max="120" step="2" value="42" />
+      <button class="ghost" id="show-mask">preview</button>
+    </div>
+    <label class="row" style="font-size:0.75rem; opacity:0.75; margin-top:0.4rem;">
+      <input type="checkbox" id="box-from-print" checked /> also set box from the printed subject
+    </label>
+    <canvas id="mask-canvas" width="160" height="220" hidden style="width:100%; margin-top:0.5rem; border-radius:6px; background:#000;"></canvas>
+
+    <label class="field" for="up-axis">Model up axis</label>
+    <select id="up-axis"></select>
+
+    <label class="field" for="heading">Heading <span id="heading-val">0°</span></label>
+    <div class="row">
+      <input type="range" id="heading" min="-180" max="180" step="1" value="0" />
+      <button class="ghost" id="orient-clear">clear</button>
+    </div>
+    <label class="field" for="pitch">Pitch <span id="pitch-val">0°</span></label>
+    <input type="range" id="pitch" min="-90" max="90" step="1" value="0" />
+    <label class="field" for="roll">Roll <span id="roll-val">0°</span></label>
+    <input type="range" id="roll" min="-180" max="180" step="1" value="0" />
+
+    <label class="field" for="fit">Fit / extra scale</label>
+    <div class="row">
+      <select id="fit" style="margin-bottom:0;">
+        <option value="cover">cover (≥ print)</option>
+        <option value="contain">contain (≤ print)</option>
+      </select>
+      <input type="number" id="scale-mul" step="0.05" min="0.2" max="4" value="1" />
+    </div>
+
+    <label class="field" for="bx">Box X / Y</label>
+    <div class="row">
+      <input type="number" id="bx" step="0.005" min="0" max="1" />
+      <input type="number" id="by" step="0.005" min="0" max="1" />
+    </div>
+    <label class="field" for="bw">Box W / H</label>
+    <div class="row">
+      <input type="number" id="bw" step="0.005" min="0.02" max="1" />
+      <input type="number" id="bh" step="0.005" min="0.02" max="1" />
+    </div>
+
+    <div class="btn-row">
+      <button id="apply-deck">Apply box to whole deck</button>
+      <button class="ghost" id="reset-card">Reset card to deck default</button>
+    </div>
+
+    <div class="btn-row">
+      <button class="ghost" id="pick">Choose assets/ folder</button>
+      <button id="save">Save placements.json</button>
+    </div>
+    <p class="hint" id="save-hint">Without a folder chosen the file downloads instead — move it into <code>assets/</code> yourself.</p>
+    <textarea id="save-fallback" hidden readonly spellcheck="false"
+      style="width:100%; height:9rem; margin-top:0.5rem; background:#0b1120; color:#e2e8f0; border:1px solid #334155; border-radius:6px; font-family:monospace; font-size:0.7rem;"></textarea>
+  </aside>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import { imageUrl } from '../src/config.js';
+    import {
+      UP_AXIS_KEYS,
+      buildModel,
+      cardAspectOf,
+      loadModelScene,
+      loadPlacements,
+      orientOf,
+      placementOffset
+    } from '../src/placement.js';
+    import { createSilhouetteRenderer, printMask, solveOrientation } from './orient-solver.js';
+
+    const statusEl = document.getElementById('status');
+    const say = (msg, cls = '') => { statusEl.className = cls; statusEl.textContent = msg; };
+
+    const DEFAULT_BOX = [0.1, 0.1, 0.8, 0.8];
+
+    let manifest = null;
+    let placements = {};
+    let deck = null;
+    let card = null;
+    let assetsDirHandle = null;
+
+    /* ------------------------------------------------------------------ scene */
+
+    const stage = document.getElementById('stage');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    stage.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b1120);
+    // Same rig as the AR view, so materials read the same here as on the card.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    dirLight.position.set(0.5, 1, 1);
+    scene.add(dirLight);
+
+    const perspCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+    perspCamera.up.set(0, 1, 0); // models stand upright in the card plane
+    perspCamera.position.set(0, 0, 2);
+
+    // Match view uses a real orthographic camera down -Z, not a far-away
+    // perspective one: comparing a silhouette against the print only means
+    // anything if the projection has no parallax to skew it.
+    const matchCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
+    matchCamera.up.set(0, 1, 0);
+    matchCamera.position.set(0, 0, 5);
+
+    let camera = perspCamera;
+    let controls = makeControls(camera);
+    // Boot pose is Card view: perspective, straight down the card normal.
+    // Box dragging is only defined from a head-on view, so this is tracked
+    // rather than inferred from which camera happens to be active.
+    let view = 'top';
+
+    function makeControls(cam) {
+      const next = new OrbitControls(cam, renderer.domElement);
+      next.enableDamping = true;
+      next.target.set(0, 0, 0);
+      return next;
+    }
+
+    // OrbitControls binds one camera for its lifetime, so a view switch swaps
+    // the whole controller rather than reassigning .object.
+    function useCamera(next) {
+      if (camera === next) return;
+      controls.dispose();
+      camera = next;
+      controls = makeControls(camera);
+      resize();
+    }
+
+    // The card itself, 1 unit wide by its own aspect tall — the exact coordinate
+    // space placementOffset() works in, so anything positioned by the shared
+    // placement math lands here where it will land in AR.
+    const cardMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ color: 0x1e293b })
+    );
+    scene.add(cardMesh);
+
+    const boxLine = new THREE.LineLoop(
+      new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)),
+      new THREE.LineBasicMaterial({ color: 0x38bdf8 })
+    );
+    boxLine.renderOrder = 2;
+    scene.add(boxLine);
+
+    const handle = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.045, 0.045),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    handle.renderOrder = 3;
+    scene.add(handle);
+
+    const modelGroup = new THREE.Group();
+    scene.add(modelGroup);
+
+    let mixer = null;
+    const clock = new THREE.Clock();
+
+    function resize() {
+      const w = stage.clientWidth;
+      const h = stage.clientHeight;
+      renderer.setSize(w, h, false);
+      const aspect = w / h || 1;
+      if (camera.isOrthographicCamera) {
+        // Frame the whole card, plus a little air for models that overflow the
+        // placement box under cover fit.
+        const halfH = (cardAspectOf(card ?? {}) / 2) * 1.15;
+        camera.top = halfH;
+        camera.bottom = -halfH;
+        camera.left = -halfH * aspect;
+        camera.right = halfH * aspect;
+      } else {
+        camera.aspect = aspect;
+      }
+      camera.updateProjectionMatrix();
+    }
+    new ResizeObserver(resize).observe(stage);
+    resize();
+
+    renderer.setAnimationLoop(() => {
+      const dt = clock.getDelta();
+      if (mixer) mixer.update(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    });
+
+    document.getElementById('view-match').addEventListener('click', () => {
+      view = 'match';
+      useCamera(matchCamera);
+      camera.up.set(0, 1, 0);
+      camera.position.set(0, 0, 5);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    });
+    // Three-quarter view: models now stand upright in the card plane, so the
+    // interesting angle is off to the side and slightly above, not overhead.
+    document.getElementById('view-3d').addEventListener('click', () => {
+      view = '3d';
+      useCamera(perspCamera);
+      camera.up.set(0, 1, 0);
+      camera.position.set(1.2, 0.5, 1.6);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    });
+    // Straight down the card normal in perspective — the angle box dragging is
+    // defined at.
+    document.getElementById('view-top').addEventListener('click', () => {
+      view = 'top';
+      useCamera(perspCamera);
+      camera.up.set(0, 1, 0);
+      camera.position.set(0, 0, 2);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    });
+
+    /* -------------------------------------------------------------- placement */
+
+    // Entry currently being edited: the card's own if it has one, else a working
+    // copy of the deck default so edits never silently mutate the wildcard.
+    function currentEntry() {
+      return placements[`${deck.id}/${card.id}`] ?? placements[`${deck.id}/*`] ?? {};
+    }
+
+    function currentBox() {
+      const box = currentEntry().box;
+      return Array.isArray(box) && box.length === 4 ? [...box] : [...DEFAULT_BOX];
+    }
+
+    // Writing an exact entry always promotes the card off the deck default.
+    function writeEntry(patch) {
+      const key = `${deck.id}/${card.id}`;
+      const isNew = !placements[key];
+      const next = { ...currentEntry(), ...patch, locked: true };
+      // Any explicit orientation supersedes the legacy `yaw` field, which
+      // src/placement.js only reads as a fallback heading.
+      if (next.orient) delete next.yaw;
+      placements[key] = next;
+      syncControls();
+      rebuild();
+      if (isNew) refreshCardList(); // pointer drags call this per move — only redraw the list when its badges actually change
+    }
+
+    // Slider edits always write the full orient object so a partially-set entry
+    // can never fall back to the legacy yaw halfway through tuning.
+    function writeOrient(patch) {
+      writeEntry({ orient: { ...orientOf(currentEntry()), ...patch } });
+    }
+
+    // Card units: x spans [-0.5, 0.5], y spans [+aspect/2, -aspect/2] top to
+    // bottom. Box is [x, y, w, h] normalized to the image with a top-left origin.
+    function boxCorners(box, aspect) {
+      const [x, y, w, h] = box;
+      const left = x - 0.5;
+      const right = x + w - 0.5;
+      const top = (0.5 - y) * aspect;
+      const bottom = (0.5 - (y + h)) * aspect;
+      return { left, right, top, bottom };
+    }
+
+    function drawBox() {
+      if (!card) return;
+      const aspect = cardAspectOf(card);
+      const { left, right, top, bottom } = boxCorners(currentBox(), aspect);
+      const pos = boxLine.geometry.attributes.position;
+      pos.setXYZ(0, left, top, 0.002);
+      pos.setXYZ(1, right, top, 0.002);
+      pos.setXYZ(2, right, bottom, 0.002);
+      pos.setXYZ(3, left, bottom, 0.002);
+      pos.needsUpdate = true;
+      boxLine.geometry.computeBoundingSphere();
+      handle.position.set(right, bottom, 0.003);
+    }
+
+    let rebuildTimer = 0;
+    let rebuildToken = 0;
+
+    // Rebuilding runs the real buildModel() so the preview is produced by the
+    // same code path as AR. Debounced because slider drags fire continuously and
+    // each rebuild re-clones and re-measures the glTF.
+    function rebuild() {
+      drawBox();
+      clearTimeout(rebuildTimer);
+      rebuildTimer = setTimeout(applyModel, 120);
+    }
+
+    // Materials are shared with the GLTF cache, so fading has to work on clones
+    // or every later rebuild inherits the transparency.
+    function setModelOpacity(root, opacity) {
+      root.traverse((n) => {
+        if (!n.isMesh && !n.isSkinnedMesh) return;
+        if (!n.userData.editorMaterial) {
+          n.material = Array.isArray(n.material) ? n.material.map((m) => m.clone()) : n.material.clone();
+          n.userData.editorMaterial = true;
+        }
+        for (const m of Array.isArray(n.material) ? n.material : [n.material]) {
+          m.transparent = opacity < 1;
+          m.opacity = opacity;
+          m.depthWrite = opacity >= 1;
+        }
+      });
+    }
+
+    function clearModelGroup() {
+      modelGroup.traverse((n) => {
+        if (!n.userData?.editorMaterial) return;
+        for (const m of Array.isArray(n.material) ? n.material : [n.material]) m.dispose();
+      });
+      modelGroup.clear();
+    }
+
+    async function applyModel() {
+      if (!card) return;
+      const token = ++rebuildToken;
+      const placement = currentEntry();
+      try {
+        const { root, modelScene, animations, pivot } = await buildModel(card, placement);
+        if (token !== rebuildToken) return;
+        const offset = placementOffset(card, placement);
+        clearModelGroup();
+        modelGroup.position.set(offset.x + pivot.x, offset.y + pivot.y, pivot.z);
+        modelGroup.add(root);
+        setModelOpacity(root, modelOpacity);
+        mixer = null;
+        if (animations?.length) {
+          mixer = new THREE.AnimationMixer(modelScene);
+          mixer.clipAction(animations[0]).play();
+        }
+        const o = orientOf(placement);
+        const match = Number.isFinite(placement.match) ? `, match ${placement.match}` : '';
+        say(
+          `${deck.id}/${card.id} — box [${currentBox().map((n) => n.toFixed(3)).join(', ')}]` +
+          `, up ${o.up}, heading ${o.heading}°, pitch ${o.pitch}°, roll ${o.roll}°` +
+          `, ${placement.fit === 'contain' ? 'contain' : 'cover'}${match}`
+        );
+      } catch (err) {
+        if (token !== rebuildToken) return;
+        clearModelGroup();
+        say(`Failed to load ${card.model}: ${err.message}`, 'err');
+      }
+    }
+
+    /* ----------------------------------------------------------- box dragging */
+
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const cardPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const hit = new THREE.Vector3();
+    let drag = null;
+
+    // Pointer -> normalized image coordinates via the card plane. The mapping is
+    // exact at any camera angle, but the gesture is only unambiguous head-on:
+    // from the 3D view a drag "inside the box" is a drag across a foreshortened
+    // quad, so it silently rewrites the placement while also killing the orbit.
+    // Hence the view gate in the pointerdown handler below.
+    function pointerToImage(ev) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      if (!raycaster.ray.intersectPlane(cardPlane, hit)) return null;
+      const aspect = cardAspectOf(card);
+      return { u: hit.x + 0.5, v: 0.5 - hit.y / aspect };
+    }
+
+    renderer.domElement.addEventListener('pointerdown', (ev) => {
+      if (!card || view === '3d') return;
+      const p = pointerToImage(ev);
+      if (!p) return;
+      const box = currentBox();
+      const [x, y, w, h] = box;
+      const nearCorner = Math.hypot(p.u - (x + w), p.v - (y + h)) < 0.05;
+      const inside = p.u >= x && p.u <= x + w && p.v >= y && p.v <= y + h;
+      if (!nearCorner && !inside) return;
+      drag = { mode: nearCorner ? 'resize' : 'move', start: p, box };
+      controls.enabled = false;
+      renderer.domElement.setPointerCapture(ev.pointerId);
+    });
+
+    renderer.domElement.addEventListener('pointermove', (ev) => {
+      if (!drag) return;
+      const p = pointerToImage(ev);
+      if (!p) return;
+      const [x, y, w, h] = drag.box;
+      const du = p.u - drag.start.u;
+      const dv = p.v - drag.start.v;
+      const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+      const round = (n) => Math.round(n * 1000) / 1000;
+      const next = drag.mode === 'move'
+        ? [round(clamp(x + du, 0, 1 - w)), round(clamp(y + dv, 0, 1 - h)), w, h]
+        : [x, y, round(clamp(w + du, 0.02, 1 - x)), round(clamp(h + dv, 0.02, 1 - y))];
+      writeEntry({ box: next });
+    });
+
+    const endDrag = (ev) => {
+      if (!drag) return;
+      drag = null;
+      controls.enabled = true;
+      renderer.domElement.releasePointerCapture?.(ev.pointerId);
+    };
+    renderer.domElement.addEventListener('pointerup', endDrag);
+    renderer.domElement.addEventListener('pointercancel', endDrag);
+
+    /* ------------------------------------------------------------------- ui */
+
+    const deckEl = document.getElementById('deck');
+    const cardsEl = document.getElementById('cards');
+    const upEl = document.getElementById('up-axis');
+    const fitEl = document.getElementById('fit');
+    const scaleMulEl = document.getElementById('scale-mul');
+    const opacityEl = document.getElementById('opacity');
+    const angleEls = {
+      heading: document.getElementById('heading'),
+      pitch: document.getElementById('pitch'),
+      roll: document.getElementById('roll')
+    };
+    const angleValEls = {
+      heading: document.getElementById('heading-val'),
+      pitch: document.getElementById('pitch-val'),
+      roll: document.getElementById('roll-val')
+    };
+    const numEls = { bx: document.getElementById('bx'), by: document.getElementById('by'), bw: document.getElementById('bw'), bh: document.getElementById('bh') };
+
+    for (const key of UP_AXIS_KEYS) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = key;
+      upEl.appendChild(opt);
+    }
+
+    let syncing = false;
+    let modelOpacity = 1;
+
+    function syncControls() {
+      syncing = true;
+      const [x, y, w, h] = currentBox();
+      numEls.bx.value = x;
+      numEls.by.value = y;
+      numEls.bw.value = w;
+      numEls.bh.value = h;
+      const entry = currentEntry();
+      const o = orientOf(entry);
+      upEl.value = o.up;
+      for (const key of Object.keys(angleEls)) {
+        angleEls[key].value = o[key];
+        angleValEls[key].textContent = `${o[key]}°`;
+      }
+      fitEl.value = entry.fit === 'contain' ? 'contain' : 'cover';
+      scaleMulEl.value = Number.isFinite(entry.scale) ? entry.scale : 1;
+      syncing = false;
+    }
+
+    for (const el of Object.values(numEls)) {
+      el.addEventListener('input', () => {
+        if (syncing || !card) return;
+        const num = (n, fallback) => (Number.isFinite(parseFloat(n)) ? parseFloat(n) : fallback);
+        const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+        const [x, y, w, h] = currentBox();
+        const nx = clamp(num(numEls.bx.value, x), 0, 1);
+        const ny = clamp(num(numEls.by.value, y), 0, 1);
+        const nw = clamp(num(numEls.bw.value, w), 0.02, 1 - nx);
+        const nh = clamp(num(numEls.bh.value, h), 0.02, 1 - ny);
+        writeEntry({ box: [nx, ny, nw, nh] });
+      });
+    }
+
+    for (const [key, el] of Object.entries(angleEls)) {
+      el.addEventListener('input', () => {
+        if (syncing || !card) return;
+        writeOrient({ [key]: parseInt(el.value, 10) });
+      });
+    }
+
+    upEl.addEventListener('change', () => {
+      if (syncing || !card) return;
+      writeOrient({ up: upEl.value });
+    });
+
+    fitEl.addEventListener('change', () => {
+      if (syncing || !card) return;
+      writeEntry({ fit: fitEl.value });
+    });
+
+    scaleMulEl.addEventListener('input', () => {
+      if (syncing || !card) return;
+      const n = parseFloat(scaleMulEl.value);
+      writeEntry({ scale: Number.isFinite(n) && n > 0 ? n : 1 });
+    });
+
+    // Opacity is a view setting, not placement data — never written to the file.
+    opacityEl.addEventListener('input', () => {
+      modelOpacity = parseInt(opacityEl.value, 10) / 100;
+      document.getElementById('opacity-val').textContent = `${opacityEl.value}%`;
+      for (const child of modelGroup.children) setModelOpacity(child, modelOpacity);
+    });
+
+    document.getElementById('orient-clear').addEventListener('click', () => {
+      if (!card) return;
+      const isNew = !placements[`${deck.id}/${card.id}`];
+      const entry = { ...currentEntry(), locked: true };
+      delete entry.orient;
+      delete entry.yaw;
+      delete entry.match;
+      placements[`${deck.id}/${card.id}`] = entry;
+      syncControls();
+      rebuild();
+      if (isNew) refreshCardList(); // promotes this card off the deck default -> its dot changes to "own"
+    });
+
+    document.getElementById('apply-deck').addEventListener('click', () => {
+      if (!card) return;
+      placements[`${deck.id}/*`] = { ...(placements[`${deck.id}/*`] ?? {}), box: currentBox() };
+      say(`Deck default for "${deck.id}" set to [${currentBox().join(', ')}].`, 'ok');
+      refreshCardList();
+    });
+
+    document.getElementById('reset-card').addEventListener('click', () => {
+      if (!card) return;
+      delete placements[`${deck.id}/${card.id}`];
+      syncControls();
+      rebuild();
+      refreshCardList();
+    });
+
+    function refreshCardList() {
+      cardsEl.replaceChildren();
+      const list = [...deck.cards];
+      // Worst-first turns review from "check all 105" into "fix the bottom ten".
+      // Unsolved cards sort last so they read as "not looked at yet", not "bad".
+      if (sortWorstFirst) {
+        list.sort((a, b) => {
+          const sa = placements[`${deck.id}/${a.id}`]?.match ?? 2;
+          const sb = placements[`${deck.id}/${b.id}`]?.match ?? 2;
+          return sa - sb;
+        });
+      }
+      for (const c of list) {
+        const entry = placements[`${deck.id}/${c.id}`];
+        const btn = document.createElement('button');
+        btn.setAttribute('aria-current', String(c.id === card?.id));
+        const name = document.createElement('span');
+        name.textContent = c.name ?? c.id;
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        // A match score when solved, otherwise where the placement comes from:
+        // "own" = has its own entry; "deck" = inheriting the wildcard; "-" = neither.
+        dot.textContent = Number.isFinite(entry?.match)
+          ? entry.match.toFixed(2)
+          : (entry ? 'own' : (placements[`${deck.id}/*`] ? 'deck' : '–'));
+        if (Number.isFinite(entry?.match)) dot.style.color = entry.match >= 0.6 ? '#4ade80' : (entry.match >= 0.45 ? '#facc15' : '#f87171');
+        btn.append(name, dot);
+        btn.addEventListener('click', () => selectCard(c));
+        cardsEl.appendChild(btn);
+      }
+    }
+
+    async function selectCard(next) {
+      card = next;
+      refreshCardList();
+      syncControls();
+      drawBox();
+
+      const aspect = cardAspectOf(card);
+      cardMesh.geometry.dispose();
+      cardMesh.geometry = new THREE.PlaneGeometry(1, aspect);
+      resize(); // Match view's frustum is sized from the card aspect
+
+      say(`Loading ${card.id}…`);
+      try {
+        const tex = await new THREE.TextureLoader().loadAsync(imageUrl(card));
+        tex.colorSpace = THREE.SRGBColorSpace;
+        cardMesh.material.dispose();
+        cardMesh.material = new THREE.MeshBasicMaterial({ map: tex });
+      } catch {
+        say(`Could not load card image ${card.image}`, 'err');
+      }
+      applyModel();
+    }
+
+    function selectDeck(next) {
+      deck = next;
+      card = null;
+      refreshCardList();
+      if (deck.cards.length) selectCard(deck.cards[0]);
+    }
+
+    /* --------------------------------------------------------- orient solver */
+
+    // One WebGL context for the whole session — a deck solve is ~800 renders per
+    // card, and the browser caps how many contexts can exist at once.
+    let silhouettes = null;
+    let solving = false;
+    let sortWorstFirst = true;
+
+    const maskThresholdEl = document.getElementById('mask-threshold');
+    const maskCanvas = document.getElementById('mask-canvas');
+    const boxFromPrintEl = document.getElementById('box-from-print');
+
+    function maskThreshold() {
+      return parseInt(maskThresholdEl.value, 10);
+    }
+
+    // The solver can only find the subject inside the crop it is given, so it
+    // searches a padded box: a hand-drawn box that clips the art would otherwise
+    // cap the measured bounds at its own (wrong) edge. 12% keeps clear of the
+    // alphabet glyph above and the caption below on every deck.
+    function searchBox(box) {
+      const [x, y, w, h] = box;
+      const px = w * 0.12;
+      const py = h * 0.12;
+      const nx = Math.max(0, x - px);
+      const ny = Math.max(0, y - py);
+      return [nx, ny, Math.min(1 - nx, w + px * 2), Math.min(1 - ny, h + py * 2)];
+    }
+
+    async function maskFor(target, entry) {
+      const box = Array.isArray(entry?.box) && entry.box.length === 4 ? entry.box : DEFAULT_BOX;
+      return printMask(target, searchBox(box), maskThreshold());
+    }
+
+    async function solveCard(target, { onProgress } = {}) {
+      const key = `${deck.id}/${target.id}`;
+      const entry = placements[key] ?? placements[`${deck.id}/*`] ?? {};
+      const print = await maskFor(target, entry);
+      if (print.empty) throw new Error('printed subject not found — adjust the mask threshold');
+
+      if (!silhouettes) silhouettes = createSilhouetteRenderer();
+      const { scene } = await loadModelScene(target);
+      silhouettes.setModel(scene);
+      const { orient, match } = solveOrientation(silhouettes, print, { onProgress });
+
+      const next = { ...entry, orient, match, locked: true };
+      delete next.yaw;
+      if (boxFromPrintEl.checked) next.box = print.bounds;
+      placements[key] = next;
+      return { match, print };
+    }
+
+    function drawMask(print) {
+      maskCanvas.hidden = false;
+      maskCanvas.width = print.w;
+      maskCanvas.height = print.h;
+      const ctx = maskCanvas.getContext('2d');
+      const img = ctx.createImageData(print.w, print.h);
+      for (let i = 0; i < print.mask.length; i++) {
+        const v = print.mask[i] ? 255 : 0;
+        img.data[i * 4] = v;
+        img.data[i * 4 + 1] = v;
+        img.data[i * 4 + 2] = v;
+        img.data[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    document.getElementById('show-mask').addEventListener('click', async () => {
+      if (!card) return;
+      try {
+        drawMask(await maskFor(card, currentEntry()));
+        say(`Mask preview for ${card.id} at threshold ${maskThreshold()}.`, 'ok');
+      } catch (err) {
+        say(`Mask failed: ${err.message}`, 'err');
+      }
+    });
+
+    maskThresholdEl.addEventListener('input', () => {
+      document.getElementById('mask-val').textContent = maskThresholdEl.value;
+    });
+
+    document.getElementById('auto-match').addEventListener('click', async () => {
+      if (!card || solving) return;
+      solving = true;
+      const target = card;
+      say(`Solving ${target.id}…`);
+      // The search is a synchronous burst of GPU readbacks, so hand the browser
+      // a frame first or the status line never paints before it starts.
+      await new Promise((r) => requestAnimationFrame(r));
+      try {
+        const { match, print } = await solveCard(target);
+        drawMask(print);
+        syncControls();
+        refreshCardList();
+        // drawBox + applyModel directly, not rebuild(): rebuild is debounced, so
+        // its own status line would land after this one and hide the result.
+        drawBox();
+        await applyModel();
+        say(`${target.id} matched at ${match}. Check Match view.`, match >= 0.6 ? 'ok' : 'err');
+      } catch (err) {
+        say(`Auto-match failed for ${target.id}: ${err.message}`, 'err');
+      } finally {
+        solving = false;
+      }
+    });
+
+    document.getElementById('solve-deck').addEventListener('click', async () => {
+      if (!deck || solving) return;
+      solving = true;
+      const cards = [...deck.cards];
+      const failures = [];
+      try {
+        for (let i = 0; i < cards.length; i++) {
+          const target = cards[i];
+          say(`Solving deck ${deck.id} — ${i + 1}/${cards.length}: ${target.id}…`);
+          try {
+            await solveCard(target);
+          } catch (err) {
+            failures.push(`${target.id} (${err.message})`);
+          }
+          // Yield so the status line actually paints between cards.
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        syncControls();
+        refreshCardList();
+        drawBox();
+        await applyModel(); // ahead of the summary so the debounced rebuild cannot hide it
+        say(
+          failures.length
+            ? `Solved ${deck.id}, ${failures.length} failed: ${failures.join(', ')}`
+            : `Solved all ${cards.length} cards in ${deck.id}. Review worst-first, then Save.`,
+          failures.length ? 'err' : 'ok'
+        );
+      } finally {
+        solving = false;
+      }
+    });
+
+    /* ----------------------------------------------------------------- save */
+
+    document.getElementById('pick').addEventListener('click', async () => {
+      if (!window.showDirectoryPicker) { say('Directory picker unsupported — saving will download instead.', 'err'); return; }
+      assetsDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      say(`Will save into "${assetsDirHandle.name}/placements.json".`, 'ok');
+    });
+
+    // Last resort when neither the directory handle nor a download works: put the
+    // JSON on screen. A solve is minutes of work held only in this page's memory,
+    // so it must never be reachable only through a path the browser can refuse.
+    function showSaveFallback(json) {
+      const el = document.getElementById('save-fallback');
+      el.hidden = false;
+      el.value = json;
+      el.focus();
+      el.select();
+    }
+
+    document.getElementById('save').addEventListener('click', async () => {
+      // Plain key sort groups by deck and floats each "<deck>/*" default to the
+      // top of its group, since '*' sorts before any letter.
+      const sorted = Object.fromEntries(Object.keys(placements).sort().map((k) => [k, placements[k]]));
+      const json = JSON.stringify(sorted, null, 2);
+      try {
+        if (assetsDirHandle) {
+          const fileHandle = await assetsDirHandle.getFileHandle('placements.json', { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(json);
+          await writable.close();
+          say('Saved assets/placements.json.', 'ok');
+          return;
+        }
+        const a = document.createElement('a');
+        const href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        a.href = href;
+        a.download = 'placements.json';
+        a.click();
+        // Revoke on a later tick: same-tick revocation can pull the blob out
+        // from under a download the browser has not committed yet.
+        setTimeout(() => URL.revokeObjectURL(href), 60_000);
+        say('Downloaded placements.json — move it into assets/.', 'ok');
+      } catch (err) {
+        // Writes can be refused after the fact (revoked permission) and downloads
+        // can be blocked outright. Both used to fail silently here, leaving a
+        // stale status that read as success.
+        showSaveFallback(json);
+        say(`Could not write the file (${err.message}). Copy the JSON below into assets/placements.json.`, 'err');
+      }
+    });
+
+    /* ----------------------------------------------------------------- boot */
+
+    const res = await fetch('/assets/manifest.json');
+    if (!res.ok) {
+      say('assets/manifest.json not found — run npm run validate first.', 'err');
+    } else {
+      manifest = await res.json();
+      placements = await loadPlacements();
+      for (const cat of manifest.categories) {
+        const opt = document.createElement('option');
+        opt.value = cat.id;
+        opt.textContent = `${cat.name} (${cat.cards.length})`;
+        deckEl.appendChild(opt);
+      }
+      deckEl.addEventListener('change', () => {
+        selectDeck(manifest.categories.find((c) => c.id === deckEl.value));
+      });
+      selectDeck(manifest.categories[0]);
+    }
+  </script>
+</body>
+</html>

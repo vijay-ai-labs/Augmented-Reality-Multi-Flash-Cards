@@ -1,0 +1,45 @@
+# --- Dependencies -----------------------------------------------------------
+node_modules/
+.pnpm-store/
+
+# --- Build output -----------------------------------------------------------
+dist/
+.vite/
+*.local
+
+# --- Asset library (NOT in git) ---------------------------------------------
+# ~6.8GB total. The runtime library (models/cards/targets/audios, ~800MB) is
+# served from object storage / a CDN via ASSET_BASE in src/config.js, and
+# *-original/ are print masters kept only on the authoring machine.
+# See "Asset drop-in rules" and "Production" in README.md.
+assets/
+
+# --- Working backups written by the tools -----------------------------------
+backups/
+*.bak
+*.bak-*
+
+# --- Local agent/editor state -----------------------------------------------
+.claude/
+.vscode/
+.idea/
+
+# --- Secrets ----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Logs & scratch ---------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-error.log*
+.cache/
+tmp/
+
+# --- OS cruft ---------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,862 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Author `display` rules (.category-tile and .notice are both grids) outrank
+   the UA sheet's [hidden] rule, so without this the hidden attribute renders
+   the element anyway -- and leaves it in the accessibility tree. */
+[hidden] {
+  display: none !important;
+}
+
+:root {
+  --bg: #f7fbff;
+  --surface: #ffffff;
+  --surface-strong: #edf7f6;
+  --ink: #17212b;
+  --ink-soft: #5c6c7a;
+  --primary: #007c89;
+  --primary-dark: #005d66;
+  --accent: #ffb547;
+  --accent-dark: #b35f00;
+  --danger: #b42318;
+  --ring: #17212b;
+  --border: #c9dde3;
+  --shadow: 0 18px 50px rgba(17, 38, 54, 0.14);
+}
+
+html,
+body {
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background:
+    linear-gradient(135deg, rgba(0, 124, 137, 0.12), transparent 42%),
+    radial-gradient(circle at 90% 8%, rgba(255, 181, 71, 0.24), transparent 22rem),
+    var(--bg);
+  color: var(--ink);
+  font-family: "Fredoka", "Trebuchet MS", sans-serif;
+  -webkit-tap-highlight-color: rgba(0, 124, 137, 0.18);
+  touch-action: manipulation;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 4px;
+}
+
+.skip-link {
+  background: var(--ink);
+  border-radius: 0 0 8px 8px;
+  color: #fff;
+  left: 1rem;
+  padding: 0.7rem 1rem;
+  position: fixed;
+  top: 0;
+  transform: translateY(-120%);
+  transition: transform 160ms ease;
+  z-index: 100;
+}
+
+.skip-link:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+  transform: translateY(0);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+#topbar {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  padding: calc(0.8rem + env(safe-area-inset-top)) 1rem 0.8rem;
+  position: relative;
+  z-index: 10;
+}
+
+#topbar h1 {
+  color: var(--ink);
+  font-size: clamp(1.25rem, 4vw, 1.8rem);
+  font-weight: 700;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+#back-btn {
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 4px 0 var(--ink);
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 48px;
+  min-width: 72px;
+  padding: 0.45rem 1rem;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 160ms ease;
+}
+
+#back-btn:hover {
+  background: var(--surface-strong);
+}
+
+#back-btn:active {
+  box-shadow: 0 1px 0 var(--ink);
+  transform: translateY(3px);
+}
+
+#screen {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+
+  /* One coordinate system for every AR overlay, so the three bottom controls
+     share a baseline and the top stack shares a starting line. Anything that
+     floats over the camera positions itself from these and nothing else. */
+  --ar-edge: 1rem;
+  --ar-top: calc(1rem + env(safe-area-inset-top));
+  --ar-bottom: calc(1rem + env(safe-area-inset-bottom));
+  --ar-control: 56px;
+  --ar-glow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.home-shell {
+  margin-inline: auto;
+  max-width: 1100px;
+  padding: 0.5rem 1rem 2rem;
+  width: 100%;
+}
+
+.scanner-panel {
+  align-items: end;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(237, 247, 246, 0.96)),
+    repeating-linear-gradient(90deg, transparent 0 24px, rgba(0, 124, 137, 0.05) 24px 25px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr auto;
+  margin: 0.25rem 0 1rem;
+  overflow: hidden;
+  padding: 1.25rem;
+}
+
+.eyebrow {
+  color: var(--primary-dark);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.45rem;
+  text-transform: uppercase;
+}
+
+.scanner-panel h2 {
+  font-size: clamp(1.35rem, 5vw, 2.45rem);
+  line-height: 1.05;
+  max-width: 13ch;
+  text-wrap: balance;
+}
+
+.panel-copy {
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.5;
+  margin-top: 0.65rem;
+  max-width: 42rem;
+}
+
+.deck-stats {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(80px, 1fr));
+}
+
+.deck-stats div {
+  background: var(--ink);
+  border-radius: 8px;
+  color: #fff;
+  min-width: 86px;
+  padding: 0.85rem;
+  text-align: center;
+}
+
+.deck-stats dt {
+  font-size: 1.55rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.deck-stats dd {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.visually-hidden {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.deck-search {
+  margin: 0 0 1rem;
+}
+
+.deck-search-field {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(17, 38, 54, 0.09);
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: auto 1fr auto;
+  padding: 0.15rem 0.9rem;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.deck-search-field:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 12px 30px rgba(0, 124, 137, 0.16);
+}
+
+.deck-search-icon {
+  color: var(--primary);
+  display: flex;
+}
+
+.deck-search input {
+  background: none;
+  border: 0;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 500;
+  min-width: 0;
+  outline: none;
+  padding: 0.85rem 0;
+}
+
+.deck-search input::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+/* The native WebKit clear affordance would sit next to our own button. */
+.deck-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.deck-search-clear {
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 0.95rem;
+  height: 30px;
+  line-height: 1;
+  width: 30px;
+}
+
+.deck-search-clear:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.deck-search-status {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-height: 1.2rem;
+  padding: 0.35rem 0.2rem 0;
+}
+
+.deck-search-reset {
+  background: var(--primary);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 4px 0 var(--primary-dark);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 0.4rem;
+  padding: 0.7rem 1.1rem;
+}
+
+.deck-search-reset:active {
+  box-shadow: 0 1px 0 var(--primary-dark);
+  transform: translateY(3px);
+}
+
+.category-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+}
+
+.category-tile {
+  --tile: var(--surface);
+  align-items: start;
+  animation: pop-in 320ms ease-out both;
+  animation-delay: var(--d, 0ms);
+  background: var(--tile);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(17, 38, 54, 0.09);
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  gap: 0.6rem;
+  min-height: 220px;
+  padding: 0.75rem;
+  text-align: left;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.category-tile:hover {
+  border-color: var(--primary);
+  box-shadow: 0 14px 34px rgba(0, 124, 137, 0.16);
+  transform: translateY(-2px);
+}
+
+.category-tile:active {
+  box-shadow: 0 5px 14px rgba(17, 38, 54, 0.12);
+  transform: translateY(1px);
+}
+
+.tile-thumb {
+  align-items: center;
+  aspect-ratio: 4 / 3;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--primary-dark);
+  display: flex;
+  font-size: 2rem;
+  font-weight: 700;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+}
+
+.tile-thumb img {
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  width: 100%;
+}
+
+.tile-name {
+  font-size: 1.12rem;
+  font-weight: 700;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.category-tile small {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.tile-matches {
+  border-top: 1px dashed var(--border);
+  color: var(--primary-dark);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  padding-top: 0.45rem;
+}
+
+.tile-warning {
+  align-self: end;
+  background: #fff4d6;
+  border: 1px solid #ffd98a;
+  border-radius: 999px;
+  color: var(--accent-dark);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  justify-self: start;
+  padding: 0.25rem 0.55rem;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.notice {
+  color: var(--ink-soft);
+  display: grid;
+  gap: 0.75rem;
+  line-height: 1.6;
+  margin: 2rem auto;
+  max-width: 680px;
+  padding: 2rem 1.25rem;
+  place-items: center;
+  text-align: center;
+}
+
+.notice h2 {
+  color: var(--ink);
+  font-size: clamp(1.4rem, 5vw, 2rem);
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.notice code {
+  background: #e7f2f5;
+  border-radius: 6px;
+  color: var(--primary-dark);
+  font-size: 0.92em;
+  padding: 0.1rem 0.35rem;
+}
+
+.notice.error {
+  color: var(--danger);
+}
+
+.loader {
+  animation: spin 850ms linear infinite;
+  border: 4px solid #d7e9ee;
+  border-radius: 999px;
+  border-top-color: var(--primary);
+  height: 42px;
+  width: 42px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+#ar-container {
+  background: #0f171d;
+  inset: 0;
+  isolation: isolate;
+  overflow: hidden;
+  position: absolute;
+  /* Gestures are handled in JS, so the browser must not pan/zoom the AR
+     surface. Scoped here on purpose: the rest of the app stays scrollable. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Top-centre column: status line, then whatever transient pills are showing.
+   Laid out in flow so a hidden child leaves no gap, and only as wide as its
+   widest pill so taps fall through the empty space either side of it. The
+   max-width keeps it clear of the top-right help button. */
+.ar-top-stack {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  left: 50%;
+  max-width: calc(100vw - 9rem);
+  pointer-events: none;
+  position: absolute;
+  top: var(--ar-top);
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+.scan-hint {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(23, 33, 43, 0.2);
+  border-radius: 999px;
+  box-shadow: var(--ar-glow);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  padding: 0.75rem 1.1rem;
+  text-align: center;
+}
+
+.gesture-pill {
+  background: rgba(15, 23, 29, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  box-shadow: var(--ar-glow);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  padding: 0.5rem 0.9rem;
+  text-align: center;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.gesture-pill[data-mode="rotate"],
+.gesture-pill[data-mode="pinch"] {
+  background: rgba(0, 124, 137, 0.92);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.gesture-pill[data-mode="move"] {
+  background: var(--accent);
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* --- bottom control row: speaker | Place Here | Reset, one shared baseline --- */
+
+.ar-audio-btn,
+.ar-reset-btn,
+.ar-pin-btn {
+  bottom: var(--ar-bottom);
+  position: absolute;
+  touch-action: manipulation;
+}
+
+/* Round and icon-only: the audience cannot read, so the speaker glyph has to
+   carry it alone. */
+.ar-audio-btn {
+  align-items: center;
+  background: var(--accent);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 5px 0 var(--ink), var(--ar-glow);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 1.5rem;
+  height: var(--ar-control);
+  justify-content: center;
+  left: var(--ar-edge);
+  line-height: 1;
+  padding: 0;
+  transition: opacity 160ms ease, transform 120ms ease, box-shadow 120ms ease;
+  width: var(--ar-control);
+  z-index: 6;
+}
+
+.ar-audio-btn:active:not(:disabled) {
+  box-shadow: 0 1px 0 var(--ink), var(--ar-glow);
+  transform: translateY(4px);
+}
+
+.ar-audio-btn:disabled {
+  box-shadow: none;
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Mirrors the speaker across the bottom edge. */
+.ar-reset-btn {
+  background: rgba(255, 255, 255, 0.94);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 5px 0 var(--ink), var(--ar-glow);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 700;
+  min-height: var(--ar-control);
+  min-width: 76px;
+  padding: 0.5rem 1rem;
+  right: var(--ar-edge);
+  transition: background-color 160ms ease, opacity 160ms ease, transform 120ms ease,
+    box-shadow 120ms ease;
+  z-index: 6;
+}
+
+.ar-reset-btn:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+
+.ar-reset-btn:active:not(:disabled) {
+  box-shadow: 0 1px 0 var(--ink), var(--ar-glow);
+  transform: translateY(4px);
+}
+
+.ar-reset-btn:disabled {
+  box-shadow: none;
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* The primary action, so it takes the middle of the row -- the easiest place
+   for a small thumb. The max-width is what keeps it off its two neighbours on
+   narrow phones; the row never wraps. */
+.ar-pin-btn {
+  background: var(--accent);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 6px 0 var(--ink), var(--ar-glow);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 1.05rem;
+  font-weight: 700;
+  left: 50%;
+  max-width: calc(100vw - 2 * var(--ar-edge) - var(--ar-control) - 76px - 1.5rem);
+  min-height: var(--ar-control);
+  overflow: hidden;
+  padding: 0.6rem 1.3rem;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+  transition: opacity 160ms ease, box-shadow 120ms ease;
+  white-space: nowrap;
+  z-index: 7;
+}
+
+.ar-pin-btn:active:not(:disabled) {
+  box-shadow: 0 2px 0 var(--ink), var(--ar-glow);
+  transform: translate(-50%, 4px);
+}
+
+.ar-pin-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Return to Card sits in the same spot: only ever one of the pair is shown. */
+.ar-unpin-btn {
+  background: var(--surface);
+}
+
+/* --------------------------------- help ---------------------------------- */
+
+.ar-help-btn {
+  align-items: center;
+  background: rgba(15, 23, 29, 0.82);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  box-shadow: var(--ar-glow);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-size: 1.45rem;
+  font-weight: 700;
+  height: 48px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  right: var(--ar-edge);
+  top: var(--ar-top);
+  touch-action: manipulation;
+  transition: background-color 160ms ease, transform 120ms ease;
+  width: 48px;
+  z-index: 8;
+}
+
+.ar-help-btn:hover {
+  background: rgba(0, 124, 137, 0.92);
+}
+
+.ar-help-btn:active {
+  transform: scale(0.92);
+}
+
+.ar-help-btn[aria-expanded="true"] {
+  background: var(--accent);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* Backdrop plus centred card. Sits above every other overlay so the row of
+   controls cannot be tapped through it. */
+.ar-help-sheet {
+  align-items: center;
+  background: rgba(9, 15, 20, 0.62);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: calc(var(--ar-top) + 3.5rem) 1rem calc(var(--ar-bottom) + 1rem);
+  position: absolute;
+  z-index: 20;
+}
+
+.ar-help-panel {
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: 22px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.4);
+  max-height: 100%;
+  max-width: 26rem;
+  overflow-y: auto;
+  padding: 1.15rem 1.15rem 1.35rem;
+  position: relative;
+  width: 100%;
+}
+
+.ar-help-title {
+  color: var(--ink);
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 0.9rem;
+  padding-right: 2.75rem;
+}
+
+.ar-help-close {
+  background: var(--surface-strong);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 1rem;
+  height: 40px;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  touch-action: manipulation;
+  width: 40px;
+}
+
+.ar-help-close:active {
+  transform: scale(0.92);
+}
+
+.ar-help-list {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+}
+
+/* The two lists (touch gestures, then buttons) read as one column, so the
+   second only needs a rule above it. */
+.ar-help-list + .ar-help-list {
+  border-top: 2px dashed var(--border);
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+}
+
+.ar-help-row {
+  align-items: center;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.ar-help-icon {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex: none;
+  font-size: 1.4rem;
+  height: 44px;
+  justify-content: center;
+  line-height: 1;
+  width: 44px;
+}
+
+.ar-help-text {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.ar-help-text strong {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.ar-help-text span {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+/* Last child of the top stack; in flow, so it sits straight under whatever is
+   above it with no gap. */
+.model-loading {
+  background: var(--accent);
+  border: 1px solid rgba(23, 33, 43, 0.18);
+  border-radius: 999px;
+  box-shadow: var(--ar-glow);
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.6rem 1rem;
+  text-align: center;
+}
+
+/* Narrow phones: shrink the middle button rather than let the bottom row
+   collide. The side controls keep their 48px+ tap targets. */
+@media (max-width: 400px) {
+  #screen {
+    --ar-edge: 0.6rem;
+  }
+
+  .ar-pin-btn {
+    font-size: 0.95rem;
+    padding: 0.6rem 0.85rem;
+  }
+
+  .ar-reset-btn {
+    font-size: 0.9rem;
+    min-width: 68px;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .scanner-panel {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .scanner-panel h2 {
+    max-width: 16ch;
+  }
+
+  .category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .category-tile {
+    min-height: 190px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}
