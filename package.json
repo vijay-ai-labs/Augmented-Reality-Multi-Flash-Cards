@@ -10,6 +10,8 @@
     "validate": "node tools/validate-assets.mjs",
     "check": "node tools/check-targets.mjs",
     "check:search": "node tools/check-search.mjs",
+    "check:cdn": "node tools/check-cdn.mjs",
+    "upload": "node tools/upload-assets.mjs",
     "compress": "node tools/compress-models.mjs",
     "tools": "vite --config vite.tools.config.js",
     "receiver": "node tools/receiver.mjs"
