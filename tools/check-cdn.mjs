@@ -54,7 +54,25 @@ const originFlag = argv.indexOf('--origin');
 // policy before you trust it.
 const origin = originFlag !== -1 ? argv[originFlag + 1] : 'https://ar-flashcards.example';
 
-let base = argv.find((a) => a.startsWith('http'));
+// The base URL is a POSITIONAL argument, so the value belonging to --origin has
+// to be stepped over: both are URLs, and picking the first thing that looks like
+// one made `--origin https://my-app.vercel.app` check the app for asset paths
+// instead of the bucket, reporting every file as a 404.
+const positional = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--origin') {
+    i++;
+    continue;
+  }
+  if (!argv[i].startsWith('-')) positional.push(argv[i]);
+}
+
+if (originFlag !== -1 && !origin?.startsWith('http')) {
+  console.error('ERROR --origin needs a URL, e.g. --origin https://my-app.vercel.app');
+  process.exit(1);
+}
+
+let base = positional.find((a) => a.startsWith('http'));
 if (!base) {
   try {
     process.loadEnvFile(path.join(root, '.env'));
