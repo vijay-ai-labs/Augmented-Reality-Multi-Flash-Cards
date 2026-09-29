@@ -2,6 +2,8 @@
 //   - spec/gloss -> metal/rough material conversion, when the source needs it
 //   - Draco mesh compression
 //   - texture resize to max 1024px + WebP conversion
+//   - mesh simplification, except on point clouds / line sets (it deletes them)
+// A model whose output ends up with no geometry is reported FAIL, never OK.
 // Originals are backed up to assets/models-original/ on first run.
 // Run AFTER validate: npm run compress
 //
@@ -51,31 +53,45 @@ async function* walk(entries) {
   }
 }
 
-// three.js dropped KHR_materials_pbrSpecularGlossiness from GLTFLoader in r150,
-// and only warns about it -- a model whose base colour and diffuse texture live
-// solely in that extension still loads, as an untextured white blob (its core
-// `pbrMetallicRoughness` block is empty). gltf-transform's `metalrough` rewrites
-// those materials into the core model, so it has to run before `optimize`.
-async function usesSpecularGlossiness(file) {
+// The JSON chunk of a .glb, or null when the file is unreadable or not a GLB
+// (gltf-transform is then the one to complain).
+async function readGlbJson(file) {
   let handle;
   try {
     handle = await open(file, 'r');
     const header = Buffer.alloc(20);
     await handle.read(header, 0, 20, 0);
-    if (header.readUInt32LE(0) !== 0x46546c67) return false; // not a binary glTF
+    if (header.readUInt32LE(0) !== 0x46546c67) return null; // not a binary glTF
     const jsonLength = header.readUInt32LE(12);
     const json = Buffer.alloc(jsonLength);
     await handle.read(json, 0, jsonLength, 20);
-    const gltf = JSON.parse(json.toString('utf8'));
-    return [...(gltf.extensionsUsed ?? []), ...(gltf.extensionsRequired ?? [])].includes(
-      'KHR_materials_pbrSpecularGlossiness'
-    );
+    return JSON.parse(json.toString('utf8'));
   } catch {
-    // Unreadable or not a GLB: let gltf-transform be the one to complain.
-    return false;
+    return null;
   } finally {
     await handle?.close();
   }
+}
+
+// three.js dropped KHR_materials_pbrSpecularGlossiness from GLTFLoader in r150,
+// and only warns about it -- a model whose base colour and diffuse texture live
+// solely in that extension still loads, as an untextured white blob (its core
+// `pbrMetallicRoughness` block is empty). gltf-transform's `metalrough` rewrites
+// those materials into the core model, so it has to run before `optimize`.
+function usesSpecularGlossiness(gltf) {
+  return [...(gltf?.extensionsUsed ?? []), ...(gltf?.extensionsRequired ?? [])].includes(
+    'KHR_materials_pbrSpecularGlossiness'
+  );
+}
+
+const primitivesOf = (gltf) => (gltf?.meshes ?? []).flatMap((m) => m.primitives ?? []);
+
+// optimize's `simplify` step is a triangle decimator. On a point cloud or line
+// set it removes every primitive, and the output is a valid, empty scene that
+// loads without error and shows nothing (verified: universe/star-cluster, a
+// 50k-point cloud, came out 0KB and still logged OK). Such sources skip it.
+function hasNonTriangles(gltf) {
+  return primitivesOf(gltf).some((p) => ![4, 5, 6].includes(p.mode ?? 4));
 }
 
 let done = 0, failed = 0, savedBytes = 0;
@@ -98,21 +114,32 @@ for await (const file of walk(targets)) {
 
   try {
     let source = backup;
-    if (await usesSpecularGlossiness(backup)) {
+    const gltf = await readGlbJson(backup);
+    if (usesSpecularGlossiness(gltf)) {
       scratch = path.join(tmpdir(), `metalrough-${randomUUID()}.glb`);
       await run(['metalrough', quote(backup), quote(scratch)]);
       source = scratch;
     }
+    const noSimplify = hasNonTriangles(gltf);
     await run([
       'optimize', quote(source), quote(file),
       '--compress', 'draco',
       '--texture-compress', 'webp',
-      '--texture-size', '1024'
+      '--texture-size', '1024',
+      ...(noSimplify ? ['--simplify', 'false'] : [])
     ]);
+    // Never report OK for an output that lost its geometry: it loads cleanly
+    // and the card just shows nothing, so nothing downstream would catch it.
+    const sourcePrims = primitivesOf(gltf).length;
+    const outPrims = primitivesOf(await readGlbJson(file)).length;
+    if (gltf && sourcePrims > 0 && outPrims === 0) {
+      throw new Error(`output has no geometry (source had ${sourcePrims} primitives) — do not ship it`);
+    }
     const after = (await stat(file)).size;
     savedBytes += before - after;
     done++;
-    console.log(`OK   ${rel}${scratch ? ' (spec/gloss converted)' : ''}  ${(before / 1e6).toFixed(1)}MB -> ${(after / 1e6).toFixed(1)}MB`);
+    const notes = [scratch && 'spec/gloss converted', noSimplify && 'points/lines: simplify skipped'].filter(Boolean);
+    console.log(`OK   ${rel}${notes.length ? ` (${notes.join(', ')})` : ''}  ${(before / 1e6).toFixed(1)}MB -> ${(after / 1e6).toFixed(1)}MB`);
   } catch (err) {
     failed++;
     console.error(`FAIL ${rel}: ${err.message.split('\n')[0]}`);

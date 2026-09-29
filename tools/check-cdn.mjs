@@ -156,7 +156,10 @@ function checkType(label, type, expected) {
 
 async function checkFile(relPath, { expectType, longCache = true, label = relPath } = {}) {
   checked++;
-  const local = path.join(root, relPath);
+  // Model paths carry a `?v=<hash>` cache-buster (see validate-assets.mjs). It
+  // belongs in the URL, not the disk path — left in, existsSync() is always
+  // false and the size comparison below silently never runs for any model.
+  const local = path.join(root, relPath.split('?')[0]);
   const res = await head(`${base}/${relPath}`);
 
   if (res.status === 0) {
@@ -254,7 +257,7 @@ await pool(sampled, 6, ({ relPath, expectType }) => checkFile(relPath, { expectT
 const masterProbe = manifest.categories[0]?.cards[0];
 if (masterProbe) {
   for (const dir of ['models-original', 'cards-original']) {
-    const relPath = masterProbe[dir.startsWith('models') ? 'model' : 'image'].replace(
+    const relPath = masterProbe[dir.startsWith('models') ? 'model' : 'image'].split('?')[0].replace(
       dir.startsWith('models') ? 'assets/models/' : 'assets/cards/',
       `assets/${dir}/`
     );

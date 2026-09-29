@@ -216,9 +216,21 @@ export function loadGLTF(card) {
 //
 // KHR_materials_unlit models (universe/star) are skipped: MeshBasicMaterial
 // ignores normals, so adding them would only cost memory.
+//
+// Skinned meshes get their own bounding volumes computed here, once, with every
+// matrix current. A SkinnedMesh measures itself through its bones, and
+// Box3.setFromObject would otherwise compute that lazily in normalizeModel --
+// but setFromObject refreshes matrices with updateWorldMatrix(), which does not
+// run SkinnedMesh's own updateMatrixWorld(), the only place its
+// bindMatrixInverse is refreshed. Measured with a stale (identity) inverse,
+// the box is in bone world units and then gets the mesh's world transform
+// applied a second time. Verified on australia and brown-bear, whose rigs sit
+// under a x44 ancestor scale: measured ~44x too big, so the fit shrank the
+// model to a dot while the GPU drew it at its true size.
 export async function loadModelScene(card) {
   const gltf = await loadGLTF(card);
   const scene = cloneSkinned(gltf.scene);
+  scene.updateMatrixWorld(true);
   scene.traverse((n) => {
     if (n.isMesh && n.geometry) {
       if (!n.geometry.attributes.normal && n.material?.isMeshBasicMaterial !== true) {
@@ -226,6 +238,10 @@ export async function loadModelScene(card) {
       }
       n.geometry.computeBoundingBox();
       n.geometry.computeBoundingSphere();
+      if (n.isSkinnedMesh) {
+        n.computeBoundingBox();
+        n.computeBoundingSphere();
+      }
     }
   });
   return { scene, animations: gltf.animations };

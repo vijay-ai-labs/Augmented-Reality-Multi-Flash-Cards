@@ -76,8 +76,9 @@ Run these commands after dropping assets into the project:
 
 ```bash
 npm install
-npm run validate
+npm run validate            # catches naming/pairing errors
 npm run compress            # or: node tools/compress-models.mjs <deck> [deck...]
+npm run validate            # again: stamps each model URL with the compressed file's hash
 npm run check               # after compiling targets — see Cards that cannot track
 npm run dev
 ```
@@ -85,6 +86,39 @@ npm run dev
 Compressing re-reads the pristine backup every time, so a whole-library run is
 always safe — it is just slow, one `gltf-transform` process per model. Name the
 decks when only some have changed.
+
+Validate writes each model as `assets/models/<deck>/<card>.glb?v=<hash>`, where
+the hash is taken from the compressed file. Models go to the CDN with a one-year
+immutable cache header, so this is the only way a replaced model reaches a
+phone that already cached the old one. That is why validate has to run again
+after compress.
+
+### Replacing a model
+
+Put the new source `.glb` in **`assets/models-original/<deck>/<card>.glb`**,
+never in `assets/models/`. Compress always builds from the backup, so a file
+dropped straight into `models/` gets overwritten by the old model. Then:
+
+```bash
+node tools/compress-models.mjs assets/models/<deck>/<card>.glb   # one or more
+npm run validate
+```
+
+**Start the tool server with an empty asset base** when `.env` sets
+`VITE_ASSET_BASE` (it does once you deploy): `VITE_ASSET_BASE= npm run tools`
+in Git Bash, or `$env:VITE_ASSET_BASE='/'; npm run tools` in PowerShell (there
+`''` deletes the variable and `.env` wins again; `/` is stripped to empty by
+`src/config.js`). Otherwise every tool
+page loads models, cards and `placements.json` from the live CDN — you see
+the old model, not the one you just compressed, and a solve POSTs the CDN's
+`placements.json` back over your local one.
+
+Re-solve that card's placement (see [Placing models on cards](#placing-models-on-cards)):
+its stored `orient` was tuned for the old mesh. With `npm run tools` and
+`npm run receiver` running, `run(['<deck>'], {}, { only: ['<card>'] })` from
+`tools/solve-headless.js` re-solves only that card and leaves the rest of
+`placements.json` alone. Review the result in Match view, then upload
+`models` and `--json`.
 
 Then start the tool server in its own terminal with `npm run tools` (see
 [Running the tool pages without a human](#running-the-tool-pages-without-a-human)
