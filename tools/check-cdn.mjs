@@ -210,6 +210,16 @@ for (const file of ['manifest.json', 'placements.json']) {
     if (!headers.get('access-control-allow-origin')) {
       errors.push(`assets/${file}: no access-control-allow-origin — set the bucket CORS policy`);
     }
+    // The app revalidates these itself (fetch cache: 'no-cache'), but older
+    // builds and other clients rely on the header: missing = heuristic caching
+    // for days, long = stale index pointing at old models.
+    const cc = headers.get('cache-control') ?? '';
+    const maxAge = Number(cc.match(/max-age=(\d+)/)?.[1] ?? NaN);
+    if (!cc) {
+      warnings.push(`assets/${file}: no cache-control — browsers may cache it for days; re-upload with npm run upload -- --json`);
+    } else if (!(maxAge <= 300) && !/no-cache|no-store/.test(cc)) {
+      warnings.push(`assets/${file}: cache-control "${cc}" — too long for the index file; re-upload with npm run upload -- --json`);
+    }
     const body = await res.json();
     if (file === 'manifest.json') {
       const remoteDecks = body.categories?.length ?? 0;

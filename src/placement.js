@@ -30,7 +30,9 @@ export const DEFAULT_CARD_ASPECT = 1.4167;
 
 export async function loadPlacements() {
   try {
-    const res = await fetch(PLACEMENTS_URL);
+    // Always revalidate, for the same reason as the manifest (see main.js):
+    // a stale copy pairs new models with the old models' orientation.
+    const res = await fetch(PLACEMENTS_URL, { cache: 'no-cache' });
     if (!res.ok) return {};
     return await res.json();
   } catch {

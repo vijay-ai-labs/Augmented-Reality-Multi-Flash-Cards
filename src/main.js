@@ -24,7 +24,13 @@ let searchUI = null; // { input, clearBtn, status, empty }
 
 async function loadManifest() {
   try {
-    const res = await fetch(MANIFEST_URL);
+    // Always revalidate. The manifest is the index that points at every model
+    // (by ?v= hash), so a device holding a stale copy keeps loading the old
+    // models no matter what is on the CDN. Headers alone cannot be trusted to
+    // prevent that: an object uploaded without Cache-Control gets heuristic
+    // browser caching (~10% of its age — days, for a weeks-old file). A 304
+    // costs a few hundred bytes.
+    const res = await fetch(MANIFEST_URL, { cache: 'no-cache' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     manifest = await res.json();
   } catch {
