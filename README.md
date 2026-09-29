@@ -312,6 +312,12 @@ tool pages check and fix that by eye:
   Pick the matching cell and write its `up`/`heading` into `placements.json`.
   `&ups=cur`, `&headings=…`, `&pitches=…` narrow the grid.
 
+- `tools/float-test.html?deck=animals` checks the pop-out-and-float motion
+  (`src/float-motion.js`) on every card numerically — starts on the card,
+  no jerky frames, never dips through the card, pop survives a slow first
+  frame, shadow on the card. `&film=1&cards=…` renders a film strip from a
+  phone-over-table angle instead.
+
 Most source models face the camera at `up +y, heading 0`; heading −90 turns the
 face to the viewer's left, +90 to the right. `fit: "contain"` is the safer
 default for anything long or tall (vehicles, flags on poles, towers).

@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Float test</title>
+  <style>
+    body { margin: 0; background: #0b1120; color: #e2e8f0; font: 12px ui-monospace, monospace; }
+    table { border-collapse: collapse; margin: 6px; }
+    td, th { padding: 2px 6px; border-bottom: 1px solid #1e293b; text-align: right; }
+    th { color: #94a3b8; font-weight: normal; }
+    td:first-child, th:first-child { text-align: left; }
+    tr.bad td { color: #fb7185; }
+    .row { display: flex; gap: 3px; padding: 4px 6px; align-items: center; }
+    .row .name { width: 190px; }
+    canvas { display: block; background: #fff; }
+    #status { padding: 6px; }
+  </style>
+</head>
+<body>
+  <div id="status">loading…</div>
+  <div id="out"></div>
+  <script type="module">
+    // Verifies the "comes out of the card and floats" motion (src/float-motion.js)
+    // on real cards, through the same buildModel + attachFloat path the AR view
+    // uses, with simulated frames instead of a camera.
+    //
+    //   /tools/float-test.html?deck=animals            numeric checks, whole deck
+    //   /tools/float-test.html?cards=a/b,c/d&film=1    film strip, phone-over-table view
+    //
+    // Numeric checks per card (all lengths relative to the model's size):
+    //   start    model is a speck sitting on the card plane at frame 0
+    //   peak     largest pop scale (overshoot)
+    //   rest     centre height above the card, and scale, once settled
+    //   popJump  largest per-frame move on screen during the pop (60fps, phone
+    //            ~40deg off the card), relative to the model's size on screen
+    //   floatJump the same while floating -- must be tiny for a smooth idle
+    //   minZ     lowest point while floating; below 0 = dips through the card
+    //   stall    scale on the first frame after a 1s stall (shader compile);
+    //            must still be small, i.e. the pop was not skipped
+    //   shadow   on the card plane, visible, faint
+    // window.__ft = { done, rows, bad } for scripted runs.
+    import * as THREE from 'three';
+    import { imageUrl, MANIFEST_URL } from '../src/config.js';
+    import { buildModel, cardAspectOf, loadPlacements, placementFor, placementOffset } from '../src/placement.js';
+    import { attachFloat } from '../src/float-motion.js';
+
+    const q = new URLSearchParams(location.search);
+    const film = q.get('film') === '1';
+    const statusEl = document.getElementById('status');
+    const out = document.getElementById('out');
+    window.__ft = { done: false, rows: [], bad: [] };
+
+    const manifest = await (await fetch(MANIFEST_URL, { cache: 'no-cache' })).json();
+    const placements = await loadPlacements();
+    const byKey = new Map();
+    for (const cat of manifest.categories) for (const card of cat.cards) byKey.set(`${cat.id}/${card.id}`, { cat, card });
+    const keys = q.get('cards')
+      ? q.get('cards').split(',').map((s) => s.trim()).filter(Boolean)
+      : (manifest.categories.find((c) => c.id === q.get('deck'))?.cards ?? []).map((c) => `${q.get('deck')}/${c.id}`);
+
+    // The same hierarchy ar-view.js builds under a MindAR anchor.
+    async function buildCard(card, placement) {
+      const anchor = new THREE.Group();
+      const offset = placementOffset(card, placement);
+      const placementGroup = new THREE.Group();
+      const userTransformGroup = new THREE.Group();
+      placementGroup.add(userTransformGroup);
+      anchor.add(placementGroup);
+      const { root, pivot } = await buildModel(card, placement);
+      placementGroup.position.set(offset.x + pivot.x, offset.y + pivot.y, pivot.z);
+      const localBox = new THREE.Box3().setFromObject(root); // root-local == floatGroup-local
+      const float = attachFloat({ placementGroup, userTransformGroup, root, pivot, reduced: false });
+      return { anchor, float, root, localBox, pivot };
+    }
+
+    const corners = Array.from({ length: 8 }, () => new THREE.Vector3());
+    function worldCorners(float, box, out) {
+      float.floatGroup.updateWorldMatrix(true, false);
+      const m = float.floatGroup.matrixWorld;
+      let i = 0;
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) out[i++].set(x, y, z).applyMatrix4(m);
+      return out;
+    }
+
+    const f3 = (n) => (Number.isFinite(n) ? n.toFixed(3) : String(n));
+
+    if (!film) {
+      const table = document.createElement('table');
+      table.innerHTML = '<tr><th>card</th><th>size</th><th>startZ</th><th>startS</th><th>peak</th><th>restLift</th><th>restS</th><th>popJump</th><th>floatJump</th><th>minZ</th><th>stallS</th><th>shadowA</th><th>flags</th></tr>';
+      out.appendChild(table);
+      for (const key of keys) {
+        const hit = byKey.get(key);
+        statusEl.textContent = `testing ${key}`;
+        const row = { key, flags: [] };
+        try {
+          const { card, cat } = hit;
+          const placement = placementFor(placements, cat.id, card.id);
+          const { anchor, float, localBox, pivot } = await buildCard(card, placement);
+          const sz = localBox.getSize(new THREE.Vector3());
+          const size = Math.max(sz.x, sz.y, 1e-6);
+          row.size = size;
+
+          // Frame 0: speck on the card plane.
+          const c0 = worldCorners(float, localBox, corners).map((v) => v.clone());
+          const ctr0 = c0.reduce((a, v) => a.add(v), new THREE.Vector3()).multiplyScalar(1 / 8);
+          row.startZ = ctr0.z;
+          row.startS = float.floatGroup.scale.x;
+
+          // Jerk is judged on screen, as a phone ~40deg off the card normal sees
+          // it: per-frame movement of the model's projected centre and extent,
+          // relative to its projected size at rest. (3D bbox corners overstate
+          // it for deep models -- motion straight at the camera barely shows.)
+          // Far enough that even the biggest model (earth's orbiting moon, a
+          // full-card flag) never reaches behind the camera, where projection
+          // blows up and reports nonsense jumps.
+          const radius = localBox.getBoundingSphere(new THREE.Sphere()).radius;
+          const dist = Math.max(1.6, radius * 4 + 1);
+          const cam = new THREE.PerspectiveCamera(60, 9 / 16, 0.01, dist * 4);
+          const el = THREE.MathUtils.degToRad(40);
+          cam.position.set(0, -Math.sin(el) * dist, Math.cos(el) * dist);
+          cam.lookAt(0, 0, 0);
+          cam.updateMatrixWorld();
+          const screen = (cs) => {
+            let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+            for (const v of cs) {
+              const p = v.clone().project(cam);
+              x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+            }
+            return [x0, x1, y0, y1];
+          };
+          const frames = [];
+          let peak = 0, minZ = Infinity, nan = false;
+          frames.push(screen(c0));
+          for (let f = 1; f <= 360; f++) {
+            float.update(1 / 60);
+            const c = worldCorners(float, localBox, corners);
+            for (const v of c) if (!Number.isFinite(v.x + v.y + v.z)) nan = true;
+            frames.push(screen(c));
+            peak = Math.max(peak, float.floatGroup.scale.x);
+            if (f > 60) for (const v of c) minZ = Math.min(minZ, v.z);
+          }
+          const rest = frames[frames.length - 1];
+          const restSpan = Math.max(rest[1] - rest[0], rest[3] - rest[2], 1e-6);
+          let popJump = 0, floatJump = 0;
+          for (let f = 1; f < frames.length; f++) {
+            const a = frames[f - 1], b = frames[f];
+            const d = Math.max(...b.map((v, i) => Math.abs(v - a[i]))) / restSpan;
+            if (f <= 60) popJump = Math.max(popJump, d); else floatJump = Math.max(floatJump, d);
+          }
+          row.peak = peak;
+          row.restS = float.floatGroup.scale.x;
+          row.restLift = float.motion.state.lift / size;
+          row.popJump = popJump;
+          row.floatJump = floatJump;
+          row.minZ = minZ / size;
+          row.shadowA = float.shadow.material.opacity;
+          const sp = new THREE.Vector3();
+          float.shadow.getWorldPosition(sp);
+          row.shadowZ = sp.z;
+
+          // Stall: pop, then a 1s first frame.
+          float.pop();
+          float.update(1.0);
+          row.stallS = float.floatGroup.scale.x;
+
+          if (nan) row.flags.push('NaN');
+          if (Math.abs(row.startZ) > 0.01) row.flags.push('start-off-card');
+          if (row.startS > 0.01) row.flags.push('start-big');
+          if (peak > 1.12 || peak < 1.0) row.flags.push('peak');
+          if (Math.abs(row.restS - 1) > 0.001) row.flags.push('rest-scale');
+          if (popJump > 0.06) row.flags.push('pop-jerky');
+          if (floatJump > 0.004) row.flags.push('float-jerky');
+          if (row.stallS > 0.3) row.flags.push('stall-skips-pop');
+          if (row.minZ < -0.001) row.flags.push('dips-behind-card');
+          if (Math.abs(row.shadowZ) > 0.01) row.flags.push('shadow-off-card');
+          if (!(row.shadowA > 0.1)) row.flags.push('shadow-invisible');
+          float.dispose();
+          anchor.traverse((n) => { if (n.isMesh) n.geometry?.dispose(); });
+        } catch (err) {
+          row.flags.push(`ERROR ${err.message}`);
+        }
+        window.__ft.rows.push(row);
+        if (row.flags.length) window.__ft.bad.push(`${key}: ${row.flags.join(' ')}`);
+        const tr = document.createElement('tr');
+        if (row.flags.length) tr.className = 'bad';
+        tr.innerHTML = `<td>${key}</td>${['size', 'startZ', 'startS', 'peak', 'restLift', 'restS', 'popJump', 'floatJump', 'minZ', 'stallS', 'shadowA'].map((k) => `<td>${f3(row[k])}</td>`).join('')}<td>${row.flags.join(' ')}</td>`;
+        table.appendChild(tr);
+      }
+    } else {
+      // Film strip: a phone held ~40deg off the card normal, card on a table.
+      const W = Number(q.get('size')) || 150;
+      const H = Math.round(W * 1.25);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(1);
+      renderer.setSize(W, H, false);
+      const times = (q.get('times') ?? '0,0.1,0.2,0.3,0.45,0.6,0.75,1.4,2.1,2.8').split(',').map(Number);
+      for (const key of keys) {
+        const hit = byKey.get(key);
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML = `<div class="name">${key}</div>`;
+        out.appendChild(row);
+        statusEl.textContent = `filming ${key}`;
+        try {
+          const { card, cat } = hit;
+          const placement = placementFor(placements, cat.id, card.id);
+          const scene = new THREE.Scene();
+          scene.background = new THREE.Color(0x8a8f98); // a table
+          scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
+          const dir = new THREE.DirectionalLight(0xffffff, 1.6);
+          dir.position.set(0.5, 1, 1);
+          scene.add(dir);
+          const aspect = cardAspectOf(card);
+          const tex = await new THREE.TextureLoader().loadAsync(imageUrl(card));
+          tex.colorSpace = THREE.SRGBColorSpace;
+          const cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, aspect), new THREE.MeshBasicMaterial({ map: tex }));
+          const { anchor, float } = await buildCard(card, placement);
+          anchor.add(cardMesh);
+          scene.add(anchor);
+          const cam = new THREE.PerspectiveCamera(40, W / H, 0.01, 50);
+          const el = THREE.MathUtils.degToRad(Number(q.get('angle') ?? 40));
+          const dist = aspect * 1.9;
+          cam.position.set(0, -Math.sin(el) * dist, Math.cos(el) * dist);
+          cam.lookAt(0, 0, 0);
+          float.pop();
+          let t = 0;
+          for (const target of times) {
+            while (t < target - 1e-6) { const s = Math.min(1 / 60, target - t); float.update(s); t += s; }
+            renderer.render(scene, cam);
+            const c = document.createElement('canvas');
+            c.width = W; c.height = H;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(renderer.domElement, 0, 0);
+            ctx.fillStyle = '#000'; ctx.font = '11px monospace';
+            ctx.fillText(`${target}s`, 4, 12);
+            row.appendChild(c);
+          }
+          float.dispose();
+          tex.dispose();
+        } catch (err) {
+          row.append(` ERROR ${err.message}`);
+          window.__ft.bad.push(`${key}: ${err.message}`);
+        }
+      }
+    }
+    statusEl.textContent = `${keys.length} cards, ${window.__ft.bad.length} flagged`;
+    window.__ft.done = true;
+  </script>
+</body>
+</html>

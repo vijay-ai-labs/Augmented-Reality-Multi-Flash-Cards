@@ -6,7 +6,7 @@ import { createStore } from './transform-store.js';
 import { cameraFailReason } from './camera-error.js';
 import { PlacementManager } from './placement-manager.js';
 import { getPronunciationPlayer } from './audio-player.js';
-import { createFloatMotion } from './float-motion.js';
+import { attachFloat } from './float-motion.js';
 
 // A card must be out of view at least this long before it pops out again on
 // its next sighting. MindAR drops and re-finds a shaky marker several times a
@@ -721,6 +721,7 @@ export async function startAR(screenEl, category) {
     }
 
     placedTarget = target;
+    target.float?.setShadowVisible(false); // no card under it in the room
     refreshPlacementUI();
     gestures.refresh();
     const name = target.card.name ?? target.cardId;
@@ -744,6 +745,7 @@ export async function startAR(screenEl, category) {
     const target = placedTarget;
     placementManager.release(rootOf(target), scene, target.anchorGroup);
     placedTarget = null;
+    target.float?.setShadowVisible(true);
 
     // Whatever card is actually in front of the camera takes over, and it need
     // not be the one that was placed: a different card sighted during the
@@ -816,7 +818,7 @@ export async function startAR(screenEl, category) {
       state,
       attached: false,
       visible: false, // is this marker currently being tracked?
-      float: null, // createFloatMotion() once the model is built
+      float: null, // attachFloat() once the model is built
       lostAt: -Infinity, // performance.now() of the last onTargetLost
       // Builds the model on demand; see loadModel below.
       load: null
@@ -845,14 +847,10 @@ export async function startAR(screenEl, category) {
         const { root, modelScene, animations, pivot } = await buildModel(card, placement);
         if (stopped) return;
         placementGroup.position.set(offset.x + pivot.x, offset.y + pivot.y, pivot.z);
-        // Measured while root is still unparented, so the box is in card units
-        // rather than whatever MindAR's anchor matrix happens to be right now.
-        const height = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3()).y;
-        const floatGroup = new THREE.Group();
-        floatGroup.add(root);
-        userTransformGroup.add(floatGroup);
-        target.float = createFloatMotion(floatGroup, { depth: pivot.z, height });
-        target.float.pop();
+        // Starts as a speck on the card; the render loop plays the pop from
+        // the first frame this card is actually tracked (see float-motion.js).
+        target.float = attachFloat({ placementGroup, userTransformGroup, root, pivot });
+        target.float.setShadowVisible(placedTarget !== target);
         if (animations?.length) {
           const mixer = new THREE.AnimationMixer(modelScene);
           mixer.clipAction(pickIdleClip(animations)).play();
@@ -939,8 +937,9 @@ export async function startAR(screenEl, category) {
   renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
     for (const mixer of mixers.values()) mixer.update(delta);
-    const now = performance.now();
-    for (const t of targets) if (t.float && (t.visible || t === placedTarget)) t.float.update(now);
+    // Only tracked (or pinned) cards advance, so a pop waits for its card to be
+    // seen and a card that drops out resumes its float without a jump.
+    for (const t of targets) if (t.float && (t.visible || t === placedTarget)) t.float.update(delta);
     // WIRE-UP POINT 3 -- after per-model animation, before rendering. Only the
     // one placed model is compensated, and only while it is placed.
     if (placementManager.isPlaced && placedTarget) placementManager.update(rootOf(placedTarget));
@@ -973,6 +972,7 @@ export async function startAR(screenEl, category) {
       renderer.setAnimationLoop(null);
       for (const mixer of mixers.values()) mixer.stopAllAction();
       mixers.clear();
+      for (const t of targets) t.float?.dispose();
       activeTarget = null;
       try {
         mindarThree.stop();
