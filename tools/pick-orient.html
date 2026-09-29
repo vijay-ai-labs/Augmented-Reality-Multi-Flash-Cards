@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Orientation picker</title>
+  <style>
+    body { margin: 0; background: #0b1120; color: #e2e8f0; font: 12px ui-monospace, monospace; }
+    .card { display: flex; gap: 8px; padding: 6px; border-bottom: 2px solid #334155; }
+    .title { font-size: 14px; padding: 2px 0 4px; }
+    table { border-collapse: collapse; }
+    td, th { padding: 1px; text-align: center; font-weight: normal; }
+    th { color: #94a3b8; }
+    canvas { display: block; background: #fff; }
+  </style>
+</head>
+<body>
+  <div id="out"></div>
+  <script type="module">
+    // Picks a model's orientation by eye, for cards the silhouette solver gets
+    // wrong. A silhouette cannot tell front from back (heading g and 180-g give
+    // the same outline for any left-right symmetric subject), and on photo or
+    // gradient cards the print mask is not the subject at all -- so for those,
+    // a person (or an agent looking at the screenshot) chooses.
+    //
+    // Each card shows its print with a 0.1 grid (read the placement box off it)
+    // and the model in full colour at every up-axis x 8 headings, pitch/roll 0.
+    // Pick "up heading", then fine-tune with &headings= / &pitches= if needed.
+    //
+    //   /tools/pick-orient.html?cards=animals/frog,birds/ibis
+    //   &cell=96  &headings=-135,-90,...  &ups=+y,-z (or cur)  &pitches=0,15,30
+    // window.__pick.done flips true when every card has rendered.
+    import * as THREE from 'three';
+    import { imageUrl, MANIFEST_URL } from '../src/config.js';
+    import { cardAspectOf, loadModelScene, loadPlacements, orientationQuaternion, placementFor, UP_AXIS_KEYS } from '../src/placement.js';
+
+    const q = new URLSearchParams(location.search);
+    const CELL = Number(q.get('cell')) || 96;
+    const headings = (q.get('headings') ?? '-135,-90,-45,0,45,90,135,180').split(',').map(Number);
+    const ups = q.get('ups') ? q.get('ups').split(',').map((s) => s.replace(' ', '+')) : UP_AXIS_KEYS;
+    const pitches = (q.get('pitches') ?? '0').split(',').map(Number);
+    const rolls = (q.get('rolls') ?? '0').split(',').map(Number);
+    const out = document.getElementById('out');
+    window.__pick = { done: false, errors: [] };
+
+    const manifest = await (await fetch(MANIFEST_URL, { cache: 'no-cache' })).json();
+    const placements = await loadPlacements();
+    const byKey = new Map();
+    for (const cat of manifest.categories) for (const card of cat.cards) byKey.set(`${cat.id}/${card.id}`, { cat, card });
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    renderer.setSize(CELL, CELL, false);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.6);
+    dir.position.set(0.5, 1, 1);
+    scene.add(dir);
+    const holder = new THREE.Group();
+    scene.add(holder);
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1e5, 1e5);
+    const box = new THREE.Box3();
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+
+    function shoot(orient) {
+      orientationQuaternion(orient, holder.quaternion);
+      holder.updateMatrixWorld(true);
+      box.setFromObject(holder);
+      box.getSize(size);
+      box.getCenter(center);
+      const half = (Math.max(size.x, size.y) * 0.5 || 1) * 1.08;
+      camera.left = center.x - half; camera.right = center.x + half;
+      camera.top = center.y + half; camera.bottom = center.y - half;
+      camera.position.set(0, 0, center.z + size.z + 10);
+      camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+      const c = document.createElement('canvas');
+      c.width = CELL; c.height = CELL;
+      c.getContext('2d').drawImage(renderer.domElement, 0, 0);
+      return c;
+    }
+
+    const keys = (q.get('cards') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    for (const key of keys) {
+      const hit = byKey.get(key);
+      const row = document.createElement('div');
+      row.className = 'card';
+      out.appendChild(row);
+      if (!hit) { row.textContent = `${key} not in manifest`; continue; }
+      const { cat, card } = hit;
+      const placement = placementFor(placements, cat.id, card.id);
+      try {
+        const left = document.createElement('div');
+        const o = placement?.orient;
+        left.innerHTML = `<div class="title">${key}</div><div>now: ${o ? `${o.up} h${o.heading} p${o.pitch} r${o.roll}` : `yaw ${placement?.yaw ?? '-'}`}</div><div>box: ${JSON.stringify(placement?.box ?? null)}</div>`;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = imageUrl(card);
+        await img.decode();
+        const aspect = cardAspectOf(card);
+        const pw = Math.max(260, CELL * 2.6);
+        const ph = Math.round(pw * aspect);
+        const pc = document.createElement('canvas');
+        pc.width = pw; pc.height = ph;
+        const ctx = pc.getContext('2d');
+        ctx.drawImage(img, 0, 0, pw, ph);
+        ctx.font = '10px monospace';
+        for (let i = 1; i < 10; i++) {
+          ctx.strokeStyle = i === 5 ? 'rgba(0,120,255,0.8)' : 'rgba(0,120,255,0.4)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo((i / 10) * pw, 0); ctx.lineTo((i / 10) * pw, ph); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, (i / 10) * ph); ctx.lineTo(pw, (i / 10) * ph); ctx.stroke();
+          ctx.fillStyle = '#0050c8';
+          ctx.fillText(String(i), (i / 10) * pw + 2, 10);
+          ctx.fillText(String(i), 2, (i / 10) * ph - 2);
+        }
+        if (placement?.box) {
+          const [bx, by, bw, bh] = placement.box;
+          ctx.strokeStyle = '#f43f5e'; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+          ctx.strokeRect(bx * pw, by * ph, bw * pw, bh * ph);
+        }
+        left.appendChild(pc);
+        row.appendChild(left);
+
+        const { scene: model } = await loadModelScene(card);
+        holder.clear();
+        holder.add(model);
+        const table = document.createElement('table');
+        const head = document.createElement('tr');
+        head.innerHTML = '<th></th>' + headings.map((h) => `<th>h${h}</th>`).join('');
+        table.appendChild(head);
+        // ups=cur: just the card's current up axis -- enough when only the
+        // heading is wrong (a model facing away or mirrored).
+        const cardUps = ups.includes('cur') ? [o?.up ?? '+y'] : ups;
+        for (const up of cardUps) {
+          for (const pitch of pitches) {
+            for (const roll of rolls) {
+              const tr = document.createElement('tr');
+              const th = document.createElement('th');
+              th.textContent = `${up}${pitch ? ` p${pitch}` : ''}${roll ? ` r${roll}` : ''}`;
+              tr.appendChild(th);
+              for (const heading of headings) {
+                const td = document.createElement('td');
+                td.appendChild(shoot({ up, heading, pitch, roll }));
+                tr.appendChild(td);
+              }
+              table.appendChild(tr);
+            }
+          }
+        }
+        row.appendChild(table);
+        holder.clear();
+      } catch (err) {
+        row.append(` ERROR ${err.message}`);
+        window.__pick.errors.push(`${key}: ${err.message}`);
+      }
+    }
+    window.__pick.done = true;
+  </script>
+</body>
+</html>

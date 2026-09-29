@@ -1,11 +1,17 @@
 import * as THREE from 'three';
 import { MindARThree } from 'mind-ar/dist/mindar-image-three.prod.js';
 import { audioUrl, targetUrl } from './config.js';
-import { buildModel, loadPlacements, placementFor, placementOffset } from './placement.js';
+import { buildModel, loadPlacements, pickIdleClip, placementFor, placementOffset } from './placement.js';
 import { createStore } from './transform-store.js';
 import { cameraFailReason } from './camera-error.js';
 import { PlacementManager } from './placement-manager.js';
 import { getPronunciationPlayer } from './audio-player.js';
+import { createFloatMotion } from './float-motion.js';
+
+// A card must be out of view at least this long before it pops out again on
+// its next sighting. MindAR drops and re-finds a shaky marker several times a
+// second; replaying the entrance on each of those would read as flicker.
+const REPOP_AFTER_MS = 1500;
 
 /* ---------------------------------------------------------------- transform */
 
@@ -783,7 +789,8 @@ export async function startAR(screenEl, category) {
     const anchor = mindarThree.addAnchor(index);
     const placement = placementFor(placements, category.id, card.id);
 
-    // anchor.group (MindAR) -> placementGroup (static) -> userTransformGroup (gestures) -> model
+    // anchor.group (MindAR) -> placementGroup (static) -> userTransformGroup (gestures)
+    //   -> floatGroup (pop-out + idle float, src/float-motion.js) -> model
     const offset = placementOffset(card, placement);
     const placementGroup = new THREE.Group();
     placementGroup.position.set(offset.x, offset.y, 0);
@@ -809,6 +816,8 @@ export async function startAR(screenEl, category) {
       state,
       attached: false,
       visible: false, // is this marker currently being tracked?
+      float: null, // createFloatMotion() once the model is built
+      lostAt: -Infinity, // performance.now() of the last onTargetLost
       // Builds the model on demand; see loadModel below.
       load: null
     };
@@ -836,10 +845,17 @@ export async function startAR(screenEl, category) {
         const { root, modelScene, animations, pivot } = await buildModel(card, placement);
         if (stopped) return;
         placementGroup.position.set(offset.x + pivot.x, offset.y + pivot.y, pivot.z);
-        userTransformGroup.add(root);
+        // Measured while root is still unparented, so the box is in card units
+        // rather than whatever MindAR's anchor matrix happens to be right now.
+        const height = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3()).y;
+        const floatGroup = new THREE.Group();
+        floatGroup.add(root);
+        userTransformGroup.add(floatGroup);
+        target.float = createFloatMotion(floatGroup, { depth: pivot.z, height });
+        target.float.pop();
         if (animations?.length) {
           const mixer = new THREE.AnimationMixer(modelScene);
-          mixer.clipAction(animations[0]).play();
+          mixer.clipAction(pickIdleClip(animations)).play();
           mixers.set(index, mixer);
         }
         target.attached = true;
@@ -871,11 +887,14 @@ export async function startAR(screenEl, category) {
         return;
       }
 
+      // Pop out again on a real re-sighting, not on tracking jitter.
+      if (target.float && performance.now() - target.lostAt > REPOP_AFTER_MS) target.float.pop();
       focusTarget(target);
     };
 
     anchor.onTargetLost = () => {
       target.visible = false;
+      target.lostAt = performance.now();
 
       // Losing the marker normally means the content goes away. Not while
       // something is placed -- persisting without the marker in view is the
@@ -920,6 +939,8 @@ export async function startAR(screenEl, category) {
   renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
     for (const mixer of mixers.values()) mixer.update(delta);
+    const now = performance.now();
+    for (const t of targets) if (t.float && (t.visible || t === placedTarget)) t.float.update(now);
     // WIRE-UP POINT 3 -- after per-model animation, before rendering. Only the
     // one placed model is compensated, and only while it is placed.
     if (placementManager.isPlaced && placedTarget) placementManager.update(rootOf(placedTarget));

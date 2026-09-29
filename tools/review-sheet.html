@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Placement review sheet</title>
+  <style>
+    body { margin: 0; background: #0b1120; color: #e2e8f0; font: 13px ui-monospace, monospace; }
+    #grid { display: grid; grid-template-columns: repeat(var(--cols, 3), auto); gap: 6px; padding: 6px; justify-content: start; }
+    .cell { background: #111827; padding: 4px; border-radius: 4px; }
+    .cell.flag { outline: 2px solid #f43f5e; }
+    .label { padding: 0 2px 4px; white-space: nowrap; }
+    .pair { display: flex; gap: 4px; }
+    canvas { display: block; background: #fff; }
+    #status { padding: 6px; }
+  </style>
+</head>
+<body>
+  <div id="status">loading…</div>
+  <div id="grid"></div>
+  <script type="module">
+    // Side-by-side review of every card's resting AR pose against its print.
+    //
+    // Match view in place-models.html overlays the model on the print, which is
+    // right for position and size but hides which way the model FACES: a model
+    // turned to show its back has the mirror silhouette of its front, and at 50%
+    // opacity the two read the same. Here each card gets two panels -- the print,
+    // and the model alone on a faint copy of the card, rendered through
+    // src/placement.js exactly as the AR view places it -- so reversed, tilted,
+    // oversized and undersized models are all visible at a glance. Animated
+    // models get a third panel, mid-way through the clip the AR view plays.
+    //
+    //   /tools/review-sheet.html?deck=animals                  whole deck
+    //   /tools/review-sheet.html?cards=animals/frog,birds/ibis  any list
+    //   &size=220 panel width   &cols=3 cells per row   &angle=25 view tilt
+    //
+    // `angle` renders from above-front at that many degrees instead of head-on,
+    // closer to how a child holding a card on the table sees it.
+    // window.__review.done flips true once every cell has rendered.
+    import * as THREE from 'three';
+    import { imageUrl, MANIFEST_URL } from '../src/config.js';
+    import { buildModel, cardAspectOf, loadPlacements, pickIdleClip, placementFor, placementOffset } from '../src/placement.js';
+
+    const q = new URLSearchParams(location.search);
+    const size = Number(q.get('size')) || 220;
+    const angle = Number(q.get('angle')) || 0;
+    document.documentElement.style.setProperty('--cols', q.get('cols') || '3');
+    const statusEl = document.getElementById('status');
+    const grid = document.getElementById('grid');
+    window.__review = { done: false, n: 0, errors: [] };
+
+    const manifest = await (await fetch(MANIFEST_URL, { cache: 'no-cache' })).json();
+    const placements = await loadPlacements();
+    const byKey = new Map();
+    for (const cat of manifest.categories) for (const card of cat.cards) byKey.set(`${cat.id}/${card.id}`, { cat, card });
+
+    let keys;
+    if (q.get('cards')) keys = q.get('cards').split(',').map((s) => s.trim()).filter(Boolean);
+    else keys = (manifest.categories.find((c) => c.id === q.get('deck'))?.cards ?? []).map((c) => `${q.get('deck')}/${c.id}`);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+    // Same rig as src/ar-view.js.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.6);
+    dir.position.set(0.5, 1, 1);
+    scene.add(dir);
+
+    const texLoader = new THREE.TextureLoader();
+
+    for (const key of keys) {
+      const hit = byKey.get(key);
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const label = document.createElement('div');
+      label.className = 'label';
+      cell.appendChild(label);
+      const pair = document.createElement('div');
+      pair.className = 'pair';
+      cell.appendChild(pair);
+      grid.appendChild(cell);
+      if (!hit) { label.textContent = `${key}  (not in manifest)`; cell.classList.add('flag'); continue; }
+      const { cat, card } = hit;
+      const placement = placementFor(placements, cat.id, card.id);
+      const o = placement?.orient;
+      label.textContent = `${key}  ${o ? `${o.up} h${o.heading} p${o.pitch} r${o.roll}` : placement?.yaw != null ? `yaw ${placement.yaw}` : 'no orient'}${placement?.fit === 'contain' ? ' contain' : ''}${placement?.scale ? ` x${placement.scale}` : ''}${placement?.match != null ? `  m${placement.match}` : ''}`;
+      statusEl.textContent = `rendering ${key} (${window.__review.n + 1}/${keys.length})`;
+
+      const aspect = cardAspectOf(card);
+      const w = size;
+      const h = Math.round(size * aspect);
+
+      // Panel 1: the print with the placement box drawn on it.
+      const print = document.createElement('canvas');
+      print.width = w; print.height = h;
+      pair.appendChild(print);
+      const shot = document.createElement('canvas');
+      shot.width = w; shot.height = h;
+      pair.appendChild(shot);
+
+      try {
+        const tex = await texLoader.loadAsync(imageUrl(card));
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const pctx = print.getContext('2d');
+        pctx.drawImage(tex.image, 0, 0, w, h);
+        if (placement?.box) {
+          const [bx, by, bw, bh] = placement.box;
+          pctx.strokeStyle = '#f43f5e'; pctx.lineWidth = 2; pctx.setLineDash([5, 4]);
+          pctx.strokeRect(bx * w, by * h, bw * w, bh * h);
+        }
+
+        // Panel 2: the card as AR sees it -- card plane at z=0 spanning x in
+        // [-0.5, 0.5] and y in [-aspect/2, aspect/2], model built and offset the
+        // way ar-view.js does it.
+        renderer.setSize(w, h, false);
+        const cardPlane = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, aspect),
+          new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.18 })
+        );
+        scene.add(cardPlane);
+        const { root, pivot, modelScene, animations } = await buildModel(card, placement);
+        const offset = placementOffset(card, placement);
+        const group = new THREE.Group();
+        group.position.set(offset.x + pivot.x, offset.y + pivot.y, pivot.z);
+        group.add(root);
+        scene.add(group);
+
+        const camera = new THREE.OrthographicCamera(-0.5, 0.5, aspect / 2, -aspect / 2, -100, 100);
+        const r = THREE.MathUtils.degToRad(angle);
+        camera.position.set(0, -Math.sin(r) * 10, Math.cos(r) * 10);
+        camera.up.set(0, 1, 0);
+        camera.lookAt(0, 0, 0);
+        renderer.render(scene, camera);
+        shot.getContext('2d').drawImage(renderer.domElement, 0, 0);
+
+        // The AR view plays clip 0 on top of the normalized pose, and a clip
+        // that keys a root node's rotation or scale replaces what normalization
+        // set. A third panel shows the model mid-clip so such cards stand out.
+        if (animations?.length) {
+          const clip = pickIdleClip(animations);
+          const mixer = new THREE.AnimationMixer(modelScene);
+          mixer.clipAction(clip).play();
+          mixer.update(Math.max(0.01, clip.duration * 0.4));
+          const anim = document.createElement('canvas');
+          anim.width = w; anim.height = h;
+          pair.appendChild(anim);
+          renderer.render(scene, camera);
+          anim.getContext('2d').drawImage(renderer.domElement, 0, 0);
+          label.textContent += `  anim:${clip.name}`;
+          mixer.stopAllAction();
+        }
+
+        scene.remove(group, cardPlane);
+        cardPlane.geometry.dispose();
+        cardPlane.material.dispose();
+        root.traverse((n) => { if (n.isMesh) { n.geometry?.dispose(); } });
+      } catch (err) {
+        cell.classList.add('flag');
+        label.textContent += `  ERROR ${err.message}`;
+        window.__review.errors.push(`${key}: ${err.message}`);
+      }
+      window.__review.n++;
+    }
+    statusEl.textContent = `${keys.length} cards`;
+    window.__review.done = true;
+  </script>
+</body>
+</html>

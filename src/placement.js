@@ -249,6 +249,21 @@ export async function loadModelScene(card) {
   return { scene, animations: gltf.animations };
 }
 
+// The clip the AR view loops. Most models carry one clip, but a few rigged
+// animals ship a full game move-set whose FIRST clip is an attack (zebra:
+// "Attack"; both elephants: "TRS|attack"), which had a child's zebra rearing
+// and kicking at them. Prefer a plain idle, then a walk, then clip 0.
+export function pickIdleClip(animations) {
+  if (!animations?.length) return null;
+  const named = (re) => animations.find((a) => re.test(a.name ?? ''));
+  return (
+    named(/(^|[|_\s])idle(0?1)?$/i) ??
+    named(/idle/i) ??
+    named(/(^|[|_\s])walk$/i) ??
+    animations[0]
+  );
+}
+
 // One fresh, normalized Object3D per anchor.
 //
 // `pivot` is the model's own 3D center after normalization (the orientation

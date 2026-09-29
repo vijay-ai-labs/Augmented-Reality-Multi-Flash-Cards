@@ -298,6 +298,24 @@ must not share:
    sorted worst-match-first, so start at the top.
 3. Fix stragglers with the up-axis / heading / pitch / roll controls, then save.
 
+**The solver cannot tell front from back.** A model's back view is the mirror
+image of its front view, so for any roughly symmetric subject both score the
+same — this is why frogs, cars and figures shipped showing their backs. Two
+tool pages check and fix that by eye:
+
+- `tools/review-sheet.html?deck=animals` (or `?cards=animals/frog,birds/ibis`)
+  shows each print beside its model rendered alone, in full colour, exactly as
+  the AR view places it — plus a mid-clip frame for animated models. Use it
+  after every solve or model swap.
+- `tools/pick-orient.html?cards=animals/frog` renders the model at every
+  up-axis × 8 headings next to the print (with a 0.1 grid for reading a `box`).
+  Pick the matching cell and write its `up`/`heading` into `placements.json`.
+  `&ups=cur`, `&headings=…`, `&pitches=…` narrow the grid.
+
+Most source models face the camera at `up +y, heading 0`; heading −90 turns the
+face to the viewer's left, +90 to the right. `fit: "contain"` is the safer
+default for anything long or tall (vehicles, flags on poles, towers).
+
 If the solver picks out the wrong subject, use **preview** next to the mask
 threshold to see what it masked, and adjust the threshold. The preview renders
 through the same `src/placement.js` the AR view uses, so what you see is what
