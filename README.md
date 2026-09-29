@@ -5,28 +5,6 @@ the matching 3D model appears on the card. Built with
 [MindAR](https://hiukim.github.io/mind-ar-js-doc/),
 [three.js](https://threejs.org/), and Vite.
 
-## What is in this repository
-
-**Code only.** The `assets/` library is not tracked in git — the runtime half
-(`models/`, `cards/`, `targets/`, `audios/`, plus `manifest.json` and
-`placements.json`) is ~800MB, and the print masters in `cards-original/` and
-`models-original/` are ~6GB more. All of it is ignored by
-[.gitignore](.gitignore); the app fetches it from `ASSET_BASE`
-(see [src/config.js](src/config.js) and [Production](#production)).
-
-So a fresh clone runs but shows **"No Categories Found"** until an asset library
-exists. To get one:
-
-```bash
-npm install
-# then either point ASSET_BASE at a CDN/bucket that already serves /assets/,
-# or build a local library from scratch:
-#   1. drop cards + models + audio into assets/ (see Asset drop-in rules)
-#   2. npm run validate && npm run compress
-#   3. compile targets at /tools/compile-targets.html (see Pipeline)
-npm run dev
-```
-
 ## How it works
 
 1. You open the app and tap a category.
