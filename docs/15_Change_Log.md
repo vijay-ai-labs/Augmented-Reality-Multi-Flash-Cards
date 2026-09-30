@@ -17,7 +17,11 @@ top (newest first) rather than rewriting old ones.
 71 clips had the wrong recording: `national-birds-animals/emu`,
 `monuments/konark-sun-temple`, `monuments/mysore-palace`, `colors/red-car`,
 and every clip in `fruits`, `space`, `universe` and `cars`. They were
-overwritten in place and uploaded to R2.
+overwritten in place and uploaded to R2. A second batch the same day replaced
+13 more: `numbers/0-1`, `scientist/telephone`,
+`country-capitals-landmarks/{cape-of-good-hope, christ-the-redeemer,
+gyeongbokgung, st-basil}` and `vegetables/{capsicum, fennel, garlic, jalapeno,
+leek, okra, pumpkin}`.
 
 Audio is served with a one-year immutable cache header and its manifest URL
 was the bare file path, so a phone that had played a wrong clip would have kept
