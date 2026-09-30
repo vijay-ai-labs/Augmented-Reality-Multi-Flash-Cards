@@ -127,7 +127,8 @@
       loadModelScene,
       loadPlacements,
       orientOf,
-      placementOffset
+      placementOffset,
+      startIdleClip
     } from '../src/placement.js';
     import { createSilhouetteRenderer, printMask, solveOrientation } from './orient-solver.js';
 
@@ -388,7 +389,7 @@
         mixer = null;
         if (animations?.length) {
           mixer = new THREE.AnimationMixer(modelScene);
-          mixer.clipAction(animations[0]).play();
+          startIdleClip(mixer, animations, placement);
         }
         const o = orientOf(placement);
         const match = Number.isFinite(placement.match) ? `, match ${placement.match}` : '';

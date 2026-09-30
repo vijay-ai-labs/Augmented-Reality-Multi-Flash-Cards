@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MindARThree } from 'mind-ar/dist/mindar-image-three.prod.js';
 import { audioUrl, targetUrl } from './config.js';
-import { buildModel, loadPlacements, pickIdleClip, placementFor, placementOffset } from './placement.js';
+import { buildModel, loadPlacements, placementFor, placementOffset, startIdleClip } from './placement.js';
 import { createStore } from './transform-store.js';
 import { cameraFailReason } from './camera-error.js';
 import { PlacementManager } from './placement-manager.js';
@@ -853,7 +853,7 @@ export async function startAR(screenEl, category) {
         target.float.setShadowVisible(placedTarget !== target);
         if (animations?.length) {
           const mixer = new THREE.AnimationMixer(modelScene);
-          mixer.clipAction(pickIdleClip(animations)).play();
+          startIdleClip(mixer, animations, placement);
           mixers.set(index, mixer);
         }
         target.attached = true;
@@ -899,8 +899,10 @@ export async function startAR(screenEl, category) {
       // entire point, so leave the placed model and the UI alone.
       if (placementManager.isPlaced) return;
 
-      hint.textContent = 'Point at one card';
+      // A card that already handed over to another (MindAR re-identified the
+      // view as a look-alike card) must not blank the new card's "found" line.
       if (activeTarget !== target) return;
+      hint.textContent = 'Point at one card';
       // Keep target.state in memory so the model returns exactly as the user left it.
       gestures.cancel();
       deactivateAudio();

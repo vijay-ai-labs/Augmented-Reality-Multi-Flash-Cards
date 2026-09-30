@@ -62,6 +62,18 @@ function titleCase(slug) {
     .join(' ');
 }
 
+// What the app shows for a card ("<name> found"). Slugs carry file-naming
+// artefacts that are not part of the word: second-art variants (`coupe1`,
+// `carrot1`, `quaver1`), per-number variants (`5-2`), and the time deck's
+// `3o`. Showing "Coupe1 found" or "3o found" teaches the wrong word.
+function cardDisplayName(slug) {
+  const oclock = slug.match(/^(\d{1,2})o$/);
+  if (oclock) return `${oclock[1]} O'Clock`;
+  const numberVariant = slug.match(/^(\d+)-\d+$/);
+  if (numberVariant) return numberVariant[1];
+  return titleCase(slug.replace(/(?<=[a-z])\d+$/, ''));
+}
+
 async function imageDimensions(filePath) {
   const buffer = await readFile(filePath);
   const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -181,7 +193,7 @@ for (const cat of cardCategories.filter((c) => modelCategories.includes(c))) {
     const modelFile = models.get(base);
     cards.push({
       id: base,
-      name: titleCase(base),
+      name: cardDisplayName(base),
       image: `assets/cards/${cat}/${imgFile}`,
       model: `assets/models/${cat}/${modelFile}?v=${await contentHash(path.join(modelsDir, cat, modelFile))}`,
       ...(audios.has(base)

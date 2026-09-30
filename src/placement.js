@@ -264,6 +264,25 @@ export function pickIdleClip(animations) {
   );
 }
 
+// Plays the idle clip on `mixer` -- or, when the placement sets `hold`
+// (seconds into that clip), freezes it on that one frame instead. For models
+// whose animation is the thing the card teaches: the time deck shares a single
+// clock whose clip runs 12 hours in 25s, so looping it showed a spinning clock
+// on every card and never the printed time. `hold` pins each card's hour
+// (placements.json time/*). Returns the action, or null for no clips.
+export function startIdleClip(mixer, animations, placement) {
+  const clip = pickIdleClip(animations);
+  if (!clip) return null;
+  const action = mixer.clipAction(clip).play();
+  const hold = placement?.hold;
+  if (Number.isFinite(hold)) {
+    action.time = THREE.MathUtils.clamp(hold, 0, clip.duration);
+    action.paused = true;
+    mixer.update(0); // apply the held frame now, before the first render
+  }
+  return action;
+}
+
 // One fresh, normalized Object3D per anchor.
 //
 // `pivot` is the model's own 3D center after normalization (the orientation

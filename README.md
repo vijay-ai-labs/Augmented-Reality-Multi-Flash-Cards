@@ -267,6 +267,35 @@ against every target in the loaded `.mind`, so a crowded deck slows every scan
 and lets weak targets lose to their neighbours; splitting one is a real fix for
 "some cards in this deck are never recognised".
 
+## Cards recognised as the wrong card
+
+Decks printed on one template — `month` calendars, `time` clocks, `jersey`
+shirts, the paired `cars`/`colors` cards — share most of their keypoints. Stock
+mind-ar 1.2.5 takes the **first** target in manifest order that clears 6
+inliers, so on those decks the shared layout alone makes the earliest card win
+whichever card is in front of the camera ("scan June, get the April model"). It
+also stops detecting once a card is tracked, so sliding a look-alike card into
+view kept the old model on it.
+
+`tools/patch-mindar.mjs` fixes both in `node_modules/mind-ar/dist` — it runs on
+`postinstall` and before `dev`, `build` and `tools`, is idempotent, and exits
+non-zero if a mind-ar upgrade moved the code it patches:
+
+- the matcher scores **every** target and keeps the one with the most inliers,
+  and only when it is clearly ahead of the runner-up (`tools/mindar-ranking.js`:
+  at least `RANK_MIN_INLIERS`, and `RANK_MARGIN`× the second best). An unsure
+  frame is skipped; the next crop usually settles it.
+- while a card is tracked it re-identifies every 12 frames and hands over when
+  a different card wins twice running.
+
+`npm run check:recognition` (`tools/check-recognition.mjs`) measures this
+offline with MindAR's own detector and matcher: every card is warped into
+synthetic phone frames (tilt, blur, lighting, noise, table), run through the 9
+`detectMoving()` crops, and matched against its whole deck. It prints, per card,
+how often stock MindAR and the ranked rule pick the wrong card. Run it after
+recompiling a deck; `--verbose` lists every card, `--dump=<file>` writes the raw
+per-crop inlier counts for re-tuning the ranking constants.
+
 ### Transparent card art
 
 Card images are matted onto white before compiling — `tools/load-card-image.js`,
@@ -307,6 +336,11 @@ faces, and how big it is. Two kinds of key, exact wins over the wildcard:
 - `match` is the solver's silhouette score, 0–1. Informational; it sorts the
   editor's card list worst-first for review.
 - `yaw` is the legacy form of `orient.heading` and still works.
+- `hold` (seconds) freezes the model's idle clip on that frame instead of
+  looping it. The `time` deck needs it: all twelve cards share one clock model
+  whose clip runs 12 hours in 25 s, so each card holds the frame showing its own
+  hour (`time/3o` → 6.281). `startIdleClip()` in `src/placement.js` applies it
+  in the AR view, the review sheet and the editor alike.
 - `<category>/*` is the deck default — enough on its own for decks where every
   card uses the same printed template.
 

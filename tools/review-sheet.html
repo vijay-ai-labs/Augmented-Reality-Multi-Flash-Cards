@@ -38,7 +38,7 @@
     // window.__review.done flips true once every cell has rendered.
     import * as THREE from 'three';
     import { imageUrl, MANIFEST_URL } from '../src/config.js';
-    import { buildModel, cardAspectOf, loadPlacements, pickIdleClip, placementFor, placementOffset } from '../src/placement.js';
+    import { buildModel, cardAspectOf, loadPlacements, placementFor, placementOffset, startIdleClip } from '../src/placement.js';
 
     const q = new URLSearchParams(location.search);
     const size = Number(q.get('size')) || 220;
@@ -138,16 +138,16 @@
         // that keys a root node's rotation or scale replaces what normalization
         // set. A third panel shows the model mid-clip so such cards stand out.
         if (animations?.length) {
-          const clip = pickIdleClip(animations);
+          // Same start as the AR view, so a held clip (`hold`) stays on its frame.
           const mixer = new THREE.AnimationMixer(modelScene);
-          mixer.clipAction(clip).play();
+          const clip = startIdleClip(mixer, animations, placement).getClip();
           mixer.update(Math.max(0.01, clip.duration * 0.4));
           const anim = document.createElement('canvas');
           anim.width = w; anim.height = h;
           pair.appendChild(anim);
           renderer.render(scene, camera);
           anim.getContext('2d').drawImage(renderer.domElement, 0, 0);
-          label.textContent += `  anim:${clip.name}`;
+          label.textContent += `  anim:${clip.name}${Number.isFinite(placement?.hold) ? ` hold ${placement.hold}s` : ''}`;
           mixer.stopAllAction();
         }
 
