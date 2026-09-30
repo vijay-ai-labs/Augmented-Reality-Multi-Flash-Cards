@@ -156,9 +156,10 @@ function checkType(label, type, expected) {
 
 async function checkFile(relPath, { expectType, longCache = true, label = relPath } = {}) {
   checked++;
-  // Model paths carry a `?v=<hash>` cache-buster (see validate-assets.mjs). It
-  // belongs in the URL, not the disk path — left in, existsSync() is always
-  // false and the size comparison below silently never runs for any model.
+  // Model and audio paths carry a `?v=<hash>` cache-buster (see
+  // validate-assets.mjs). It belongs in the URL, not the disk path — left in,
+  // existsSync() is always false and the size comparison below silently never
+  // runs for any model or clip.
   const local = path.join(root, relPath.split('?')[0]);
   const res = await head(`${base}/${relPath}`);
 

@@ -59,7 +59,7 @@ hand-edited.
 | `name` | string | always | Display/spoken name, derived from `id` the same way as the deck name. |
 | `image` | string (path) | always | Path to the card's flat scan/photo, relative to the project root — joined with `ASSET_BASE` at runtime by `src/config.js`. |
 | `model` | string (URL path) | always | Path to the card's 3D model (`.glb`) plus `?v=<hash>`, the first 8 hex characters of the compressed file's sha256. Models are cached for a year as immutable, so the hash is what makes a replaced model load fresh. Not a file-system path: strip the query before using it as one. |
-| `audio` | string (URL path) | optional | Path to the card's spoken-name clip plus `?v=<hash>` (first 8 hex characters of the file's sha256), for the same cache reason as `model`. **Absent, not null or empty string**, when no clip exists — the app checks for the field's presence to decide whether to enable the speaker button. |
+| `audio` | string (URL path) | optional | Path to the card's spoken-name clip plus `?v=<hash>` (first 8 hex characters of the file's sha256), for the same cache reason as `model`; strip the query before using it as a file-system path. **Absent, not null or empty string**, when no clip exists — the app checks for the field's presence to decide whether to enable the speaker button. |
 | `w`, `h` | number | optional | Pixel dimensions of the source image, read from the file itself (PNG/JPEG headers) by the validator. Used by `tools/check-targets.mjs` to detect a stale `.mind` file (compiled from a different, since-replaced image) and by `src/placement.js` to compute the card's aspect ratio for scaling models. Falls back to a default aspect ratio (`DEFAULT_CARD_ASPECT = 1.4167`, roughly a 5x7 card) when absent. |
 
 ### Relationships

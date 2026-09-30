@@ -69,7 +69,14 @@ Validate writes each model as `assets/models/<deck>/<card>.glb?v=<hash>`, where
 the hash is taken from the compressed file. Models go to the CDN with a one-year
 immutable cache header, so this is the only way a replaced model reaches a
 phone that already cached the old one. That is why validate has to run again
-after compress.
+after compress. Audio clips get the same `?v=<hash>`.
+
+Then start the tool server in its own terminal with `npm run tools` (see
+[Running the tool pages without a human](#running-the-tool-pages-without-a-human)
+for why it is a separate server), open
+`http://localhost:5174/tools/compile-targets.html`, choose the
+`assets/targets/` folder, tick the categories you need, and compile. Categories
+that already have a `.mind` file start unticked, so nothing finished is redone.
 
 ### Replacing a model
 
@@ -111,12 +118,8 @@ npm run upload -- audios
 npm run upload -- --json
 ```
 
-Then start the tool server in its own terminal with `npm run tools` (see
-[Running the tool pages without a human](#running-the-tool-pages-without-a-human)
-for why it is a separate server), open
-`http://localhost:5174/tools/compile-targets.html`, choose the
-`assets/targets/` folder, tick the categories you need, and compile. Categories
-that already have a `.mind` file start unticked, so nothing finished is redone.
+Cards, models, targets and placements are unaffected, so there is no target
+recompile and no re-solve.
 
 ### Running the tool pages without a human
 
