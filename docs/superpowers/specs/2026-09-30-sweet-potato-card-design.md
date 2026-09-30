@@ -9,7 +9,8 @@
 ## Steps
 
 1. Copy the card original into `assets/cards/vegetables/`, then `node tools/resize-cards.mjs vegetables`
-   (fits inside 1200x1700 -> 1133x1700; the other cards are untouched because they are already in bounds).
+   (fits inside 1200x1700 -> 1133x1700). The tool also re-derives every other card whose backup is oversized;
+   the output is byte-identical, which was confirmed with `rclone check` against R2.
 2. `npm run validate`: the manifest gains the card (54 in the deck).
 3. `node tools/compress-models.mjs assets/models/vegetables/sweet-potato.glb`, then `npm run validate` again
    to stamp `?v=<hash>`. Check that the output has geometry.
@@ -20,9 +21,15 @@
    solver is wrong (a high match score does not prove the placement is correct).
 6. `npm run check`: record the card's features and tracking counts against the library median (191/21).
 
-## Out of scope
+## Outcome
 
-No R2 upload and no git push of assets. The user reviews first.
+- Uploaded after review. On phones that had opened the deck before, the upload exposed a stale-target bug:
+  `.mind` was served under a bare immutable URL, so those phones kept the 53-target file against the
+  54-card manifest, and tomato showed Sweet Potato, wasabi showed Vidalia Onions, and so on. Fixed in
+  a5fc9bb: target URLs now carry `?v=<hash>`, and upload refuses a stale hash. The bug was reproduced and
+  the fix verified with a fake-camera run against production.
+- `rclone sync` stripped Cache-Control from the byte-identical re-derived cards (a modtime-only server-side
+  copy). They were re-uploaded with the header, and upload now passes `--no-update-modtime`.
 
 ## Known risk
 

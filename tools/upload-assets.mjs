@@ -167,6 +167,11 @@ const env = {
 };
 
 const COMMON = [
+  // A file whose bytes match R2 but whose local mtime moved (resize-cards
+  // re-deriving a deck, a fresh copy of the library) otherwise gets its remote
+  // mtime "updated" by a server-side copy -- and that copy drops Cache-Control,
+  // leaving the object re-downloaded on every visit. Identical means untouched.
+  '--no-update-modtime',
   '--transfers', '16',
   '--checkers', '32',
   '--retries', '3',
