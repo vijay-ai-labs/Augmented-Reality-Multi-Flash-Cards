@@ -24,6 +24,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cardsDir = path.join(root, 'assets', 'cards');
 const modelsDir = path.join(root, 'assets', 'models');
 const audiosDir = path.join(root, 'assets', 'audios');
+const targetsDir = path.join(root, 'assets', 'targets');
 const manifestPath = path.join(root, 'assets', 'manifest.json');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png']);
@@ -198,8 +199,19 @@ for (const cat of cardCategories.filter((c) => modelCategories.includes(c))) {
 
   if (cards.length > 25) warnings.push(`Category "${cat}" has ${cards.length} cards — recognition slows above ~25 targets per category`);
 
+  // The .mind gets the same immutable header, and a stale one is worse than a
+  // stale model: anchors are index-based, so a phone holding last month's
+  // target file against this manifest shows every card after an insertion with
+  // its neighbour's model. Hash it like the models, so run this again after
+  // compiling targets (upload-assets refuses a manifest whose hash is stale).
+  const targetPath = path.join(targetsDir, `${cat}.mind`);
+  const target = await stat(targetPath).then(
+    async () => `assets/targets/${cat}.mind?v=${await contentHash(targetPath)}`,
+    () => null
+  );
+
   totalCards += cards.length;
-  categories.push({ id: cat, name: titleCase(cat), cards });
+  categories.push({ id: cat, name: titleCase(cat), ...(target ? { target } : {}), cards });
 }
 
 for (const w of warnings) console.warn(`WARN  ${w}`);

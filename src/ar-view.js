@@ -563,7 +563,7 @@ export async function startAR(screenEl, category) {
 
   const mindarThree = new MindARThree({
     container,
-    imageTargetSrc: targetUrl(category.id),
+    imageTargetSrc: targetUrl(category),
     filterMinCF: 0.0001,
     filterBeta: 0.001,
     missTolerance: 5,

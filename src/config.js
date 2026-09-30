@@ -19,7 +19,10 @@ export const ASSET_BASE = (import.meta.env.VITE_ASSET_BASE ?? '').replace(/\/+$/
 
 export const MANIFEST_URL = `${ASSET_BASE}/assets/manifest.json`;
 export const PLACEMENTS_URL = `${ASSET_BASE}/assets/placements.json`;
-export const targetUrl = (categoryId) => `${ASSET_BASE}/assets/targets/${categoryId}.mind`;
+// `target` carries a content hash, like `model`; the bare path is the fallback
+// for a manifest written before validate stamped targets.
+export const targetUrl = (category) =>
+  `${ASSET_BASE}/${category.target ?? `assets/targets/${category.id}.mind`}`;
 export const modelUrl = (card) => `${ASSET_BASE}/${card.model}`;
 export const imageUrl = (card) => `${ASSET_BASE}/${card.image}`;
 // Optional: cards whose deck has no matching clip in assets/audios/ have no

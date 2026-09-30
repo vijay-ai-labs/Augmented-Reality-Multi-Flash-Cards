@@ -34,7 +34,8 @@
 // secret does not show up in the process list.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -123,6 +124,27 @@ const withJson = jsonOnly || named.length === 0;
 for (const file of withJson ? JSON_FILES : []) {
   if (!existsSync(path.join(assetsDir, file))) {
     console.error(`ERROR assets/${file} does not exist — run "npm run validate" first.`);
+    process.exit(1);
+  }
+}
+
+// A manifest whose target hash predates the last compile is the one mistake
+// the cache headers cannot absorb: phones keep the old immutable .mind, its
+// anchors no longer line up with the manifest's cards, and scanning a card
+// shows a different card's model. Compiling after validate is the natural
+// order to get this wrong in, so check before sending anything.
+if (withJson) {
+  const manifest = JSON.parse(readFileSync(path.join(assetsDir, 'manifest.json'), 'utf8'));
+  const stale = [];
+  for (const cat of manifest.categories) {
+    const file = path.join(assetsDir, 'targets', `${cat.id}.mind`);
+    if (!existsSync(file)) continue;
+    const hash = createHash('sha256').update(readFileSync(file)).digest('hex').slice(0, 8);
+    if (cat.target !== `assets/targets/${cat.id}.mind?v=${hash}`) stale.push(cat.id);
+  }
+  if (stale.length) {
+    console.error(`ERROR manifest target hash is stale for: ${stale.join(', ')}`);
+    console.error('      Targets were compiled after the last validate — run "npm run validate" again.');
     process.exit(1);
   }
 }

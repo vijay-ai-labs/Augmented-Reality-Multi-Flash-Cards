@@ -57,7 +57,9 @@ npm install
 npm run validate            # catches naming/pairing errors
 npm run compress            # or: node tools/compress-models.mjs <deck> [deck...]
 npm run validate            # again: stamps each model URL with the compressed file's hash
-npm run check               # after compiling targets — see Cards that cannot track
+# compile targets (below), then:
+npm run validate            # again: stamps each target URL with the compiled .mind's hash
+npm run check               # see Cards that cannot track
 npm run dev
 ```
 
@@ -69,7 +71,12 @@ Validate writes each model as `assets/models/<deck>/<card>.glb?v=<hash>`, where
 the hash is taken from the compressed file. Models go to the CDN with a one-year
 immutable cache header, so this is the only way a replaced model reaches a
 phone that already cached the old one. That is why validate has to run again
-after compress. Audio clips get the same `?v=<hash>`.
+after compress. Audio clips get the same `?v=<hash>`, and so do target files
+(`assets/targets/<deck>.mind?v=<hash>`) — so validate runs once more after
+compiling. A stale target is the worst case of the three: MindAR anchors are
+index-based, so a phone holding the old `.mind` against a manifest with a card
+inserted shows every later card with its neighbour's model. `npm run upload`
+refuses to send a manifest whose target hashes don't match the files on disk.
 
 Then start the tool server in its own terminal with `npm run tools` (see
 [Running the tool pages without a human](#running-the-tool-pages-without-a-human)
