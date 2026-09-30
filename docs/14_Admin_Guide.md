@@ -103,6 +103,21 @@ fetch a replaced model.
 
 Cards and `.mind` targets are unaffected, so there is no recompile.
 
+### Replacing a wrong audio clip
+
+1. Overwrite **`assets/audios/<deck>/<card>.mp3`** with the new clip. There is
+   no backup folder or processing step for audio: the file you drop in is the
+   file that ships. Keep the name identical to the card's slug — a typo means
+   validate warns "has no audio clip" and `upload -- audios` (an rclone
+   *sync*) deletes the correctly named live clip.
+2. `npm run validate` — writes each audio URL as `…/<card>.mp3?v=<hash>`.
+   Audio has the same one-year immutable cache header as models, so the hash
+   is what makes phones fetch the new clip.
+3. `npm run upload -- audios`, then `npm run upload -- --json`, then
+   `npm run check:cdn`.
+
+Cards, models, targets and placements are unaffected.
+
 ## 2. Compiling image targets (`.mind` files)
 
 Start the tool server in its own terminal — this is deliberately a

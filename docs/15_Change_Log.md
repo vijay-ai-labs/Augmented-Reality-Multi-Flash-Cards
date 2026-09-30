@@ -12,6 +12,19 @@ top (newest first) rather than rewriting old ones.
 > repository's git history starts partway through the project's life. Dates
 > are as recorded in those notes.
 
+## 2026-09-30 — Replace wrong audio clips and cache-bust audio URLs
+
+71 clips had the wrong recording: `national-birds-animals/emu`,
+`monuments/konark-sun-temple`, `monuments/mysore-palace`, `colors/red-car`,
+and every clip in `fruits`, `space`, `universe` and `cars`. They were
+overwritten in place and uploaded to R2.
+
+Audio is served with a one-year immutable cache header and its manifest URL
+was the bare file path, so a phone that had played a wrong clip would have kept
+it. `tools/validate-assets.mjs` now appends `?v=<hash>` to every `audio` URL,
+as it already did for models. All 541 clip URLs changed once; each phone
+re-downloads a clip the next time it plays it.
+
 ## 2026-09-09 — Fix check-cdn treating the `--origin` value as the base URL
 
 `npm run check:cdn -- --origin https://my-app.vercel.app` was silently

@@ -85,11 +85,11 @@ async function imageDimensions(filePath) {
   return {};
 }
 
-// Models go to the CDN with a one-year immutable cache header, so replacing one
-// under the same name would never reach a phone that already has it. The
-// manifest (short TTL) carries a content hash on each model URL instead: a new
-// file means a new URL. Hash the *compressed* file, so run this after
-// `npm run compress`.
+// Models and audio clips go to the CDN with a one-year immutable cache header,
+// so replacing one under the same name would never reach a phone that already
+// has it. The manifest (short TTL) carries a content hash on each model and
+// audio URL instead: a new file means a new URL. Hash the *compressed* model,
+// so run this after `npm run compress`.
 async function contentHash(filePath) {
   return createHash('sha256').update(await readFile(filePath)).digest('hex').slice(0, 8);
 }
@@ -183,7 +183,9 @@ for (const cat of cardCategories.filter((c) => modelCategories.includes(c))) {
       name: titleCase(base),
       image: `assets/cards/${cat}/${imgFile}`,
       model: `assets/models/${cat}/${modelFile}?v=${await contentHash(path.join(modelsDir, cat, modelFile))}`,
-      ...(audios.has(base) ? { audio: `assets/audios/${cat}/${audios.get(base)}` } : {}),
+      ...(audios.has(base)
+        ? { audio: `assets/audios/${cat}/${audios.get(base)}?v=${await contentHash(path.join(audiosDir, cat, audios.get(base)))}` }
+        : {}),
       ...dimensions
     });
   }

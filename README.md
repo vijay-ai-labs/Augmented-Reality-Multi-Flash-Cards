@@ -98,6 +98,19 @@ its stored `orient` was tuned for the old mesh. With `npm run tools` and
 `placements.json` alone. Review the result in Match view, then upload
 `models` and `--json`.
 
+### Replacing an audio clip
+
+Overwrite `assets/audios/<deck>/<card>.mp3` in place. The name must match the
+card exactly, or validate drops that card's audio and `upload -- audios`
+deletes the live clip. Clips get the same `?v=<hash>` treatment as models, so
+no other step is needed:
+
+```bash
+npm run validate
+npm run upload -- audios
+npm run upload -- --json
+```
+
 Then start the tool server in its own terminal with `npm run tools` (see
 [Running the tool pages without a human](#running-the-tool-pages-without-a-human)
 for why it is a separate server), open
